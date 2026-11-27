@@ -292,7 +292,8 @@ describe("a pushed change", () => {
 
 		push(TIMBER);
 		expect(loads.map(load => load.path)).toEqual([TIMBER]);
-		expect(store.getState().operations).toEqual([{ kind: "reload-repository", repository: TIMBER }]);
+		// The file watch starts it, so nothing shows it as the person's refresh (see tests/changes-tab.test.tsx).
+		expect(store.getState().operations).toEqual([]);
 
 		loads[0]!.resolve(repositoryIn(withModified(FEATURE, 9), TIMBER));
 		await settle();

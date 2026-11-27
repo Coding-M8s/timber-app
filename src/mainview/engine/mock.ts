@@ -401,6 +401,12 @@ export interface MockEngine extends Engine, TerminalControls, TimberConfigContro
 	setRepositories(repositories: Repository[]): void;
 	/** Report that a repository changed, as the main process would. */
 	announceChange(path: string): void;
+	/**
+	 * Report that a repository changed every `milliseconds`, as the file watch does while an agent writes, or pass
+	 * null to stop (so does anything that is not above zero). With `adding`, each report first adds a new untracked file to the repository's worktrees that
+	 * show changes, as an agent creating files does. Starting again replaces the earlier timer.
+	 */
+	announceChangesEvery(path: string, milliseconds: number | null, adding?: boolean): void;
 	/** Report that the Timber status changed on its own, as the main process does when a newer release comes out. */
 	announceTimberChange(): void;
 	/** How many times the interface said it had drawn itself through `windowReady`. */
@@ -836,6 +842,8 @@ export function createMockEngine(
 	const announce = (path: string) => {
 		for (const listener of [...listeners]) listener(path);
 	};
+	let changeTimer: ReturnType<typeof setInterval> | null = null;
+	let agentFiles = 0;
 	/** Change the sync state of every worktree of `path` on `branch`. Answers whether one was there. */
 	const changeSync = (path: string, branch: string, change: (sync: SyncState | null) => SyncState | null): boolean => {
 		let found = false;
@@ -1770,6 +1778,21 @@ export function createMockEngine(
 			return () => void handoffListeners.delete(listener);
 		},
 		announceChange: announce,
+		announceChangesEvery(path, milliseconds, adding = false) {
+			if (changeTimer !== null) clearInterval(changeTimer);
+			changeTimer = null;
+			if (milliseconds === null || !(milliseconds > 0)) return;
+			changeTimer = setInterval(() => {
+				if (adding) {
+					const repository = current.find(candidate => candidate.path === path);
+					for (const worktree of repository?.worktrees ?? []) {
+						if (!worktree.pathExists) continue;
+						fileChangeLists.set(worktree.path, [...filesOf(worktree), { change: { area: "untracked", kind: "added", path: `src/agent-${++agentFiles}.ts`, previousPath: null, added: null, removed: null, version: "" }, patch: "" }]);
+					}
+				}
+				announce(path);
+			}, milliseconds);
+		},
 		fetchStatuses: async () => current.filter(repository => repository.available).map(repository => structuredClone(fetchOf(repository.path))),
 		fetchNow(path) {
 			const ongoing = running.get(path);

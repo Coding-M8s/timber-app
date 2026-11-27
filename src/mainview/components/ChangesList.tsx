@@ -483,7 +483,9 @@ export function ChangesList() {
 /**
  * Reads the selected worktree's changes while the Changes view or its diff
  * tab shows, and again whenever its status on screen is read again, which
- * is when the repository reloads. It draws nothing.
+ * is when the repository reloads. It draws nothing. The store decides
+ * whether that read shows a spinner (`follows`): not when the file watch
+ * caused the reload.
  */
 export function ChangesReader() {
 	const store = useStore();
@@ -494,7 +496,7 @@ export function ChangesReader() {
 	// `worktree` is a new object after every reload of its repository, so this follows the rest of the status.
 	const worktree = selected?.worktree ?? null;
 	useEffect(() => {
-		if (wanted && repository !== null && worktree !== null && worktree.pathExists) void store.readChanges(repository, worktree.id);
+		if (wanted && repository !== null && worktree !== null && worktree.pathExists) void store.readChanges(repository, worktree.id, { follows: true });
 	}, [store, wanted, repository, worktree]);
 	return null;
 }

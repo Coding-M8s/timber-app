@@ -3946,8 +3946,11 @@ Comparing against a backup is a later step.
   shows or the diff tab does (`changesWanted`), and again whenever the
   worktree's status on screen is read again, which is whenever its
   repository reloads: the sidebar's Refresh, the view's own Refresh, or a
-  reported change. The open file's diff is read again with it. The view is
-  in the store (`changes`), and the latest read wins.
+  reported change. It always asks with `{ follows: true }`. The open file's
+  diff is read again with it. The view is in the store (`changes`), and the
+  latest read wins. A read whose list is the same as the one on screen keeps
+  that very list and, with everything else the same, leaves `changes`
+  alone, so rows, the keyboard, and scroll are not drawn again.
 - **Showing a refresh.** `changesBusy` in the store's state says whether a
   worktree's changes are being read again: its `read-changes`, its repository's
   `reload-repository`, or `reload-all`. A switch of "Compare with" is a
@@ -3958,6 +3961,20 @@ Comparing against a backup is a later step.
   screen; only then is the list dimmed and the hidden polite status set to
   "Refreshing…", so a first read or a new comparison is never announced
   as a refresh. The counts keep their own status, unchanged.
+- **Background reads draw nothing.** The file watch's reload calls
+  `reloadMerged`, the merged reload without an operation, where the person's
+  own reloads (`reloadOne`) track `reload-repository`. Reloads still merge in
+  one place, so they stay in order. A reload that runs while a
+  `reload-repository` or `reload-all` is tracked puts its repository in
+  `loudFollow`, and the next `readChanges` for it takes it out. A read asked
+  with `follows` is not tracked (`readsQuietly` in `state.ts`) only when
+  nothing is in `loudFollow`, the view already lists this worktree, and it
+  shows the comparison chosen. So Refresh, a switch of "Compare with", the
+  first read, and the reads after a stage, unstage, commit, or discard still
+  show a spinner, and the watch's own reads do not. A background read that
+  fails still shows its problem. In `bun run dev:web`,
+  `timberMock.announceChangesEvery("/work/timber", 1000, true)` acts out an
+  agent that writes a file every second (`null` stops it).
 - **Trying it.** In `bun run dev:web` the billing worktree feat/tax-rules
   shows every kind of change, and with Base two files committed on the
   branch. The pretend branch point is always `a1b2c3d`. `timberMock.failFileChanges("Git is busy")`

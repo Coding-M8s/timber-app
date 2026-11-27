@@ -945,10 +945,31 @@ export function isRunning(state: AppState, kind: Operation["kind"]): boolean {
 	return state.operations.some(operation => operation.kind === kind);
 }
 
+/** How `Store.readChanges` was asked. */
+export interface ReadChangesOptions {
+	/** The read follows a new picture of the repository (the reader of the Changes view asks so, whatever started the reload). */
+	follows?: boolean;
+}
+
 /**
- * Whether a worktree's Changes view is being read again: its changed files, or
- * its repository (the tab's Refresh, a reported change), or every repository
- * (the sidebar's Refresh).
+ * Whether a read of the changes that follows a reload draws nothing: no
+ * spinner, dim, or announcement. Only when the file watch started that
+ * reload (`asked` is false), and the view already lists this worktree, so
+ * there is a list to keep. A first read, a switch of Compare with (a read of
+ * its own, not one that follows), and what follows the person's own Refresh,
+ * stage, commit, or discard stay shown. The comparison read is the one the
+ * list already has, whether it is the one chosen or Uncommitted because the
+ * base cannot be used.
+ */
+export function readsQuietly(view: ChangesView | null, worktree: string, asked: boolean): boolean {
+	return !asked && view !== null && view.worktree === worktree && view.files !== null;
+}
+
+/**
+ * Whether a worktree's Changes view is being read again for the person: its
+ * changed files, or its repository (the tab's Refresh), or every repository
+ * (the sidebar's Refresh). Reads and reloads the file watch starts are not
+ * operations, so they never count (see `readsQuietly`).
  */
 export function changesBusy(state: AppState, repository: string, worktree: string): boolean {
 	return state.operations.some(operation =>

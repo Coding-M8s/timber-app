@@ -11,7 +11,7 @@ import { FOLDER_MISSING_CHANGES } from "../src/mainview/components/ChangesList";
 import { codeHighlightStyle, pickLanguage } from "../src/mainview/editor-language";
 import { browserSampleRepositories, createMockEngine, sampleRepositories } from "../src/mainview/engine/mock";
 import { derivedFileChanges, GALLERY_WORKTREE, MOCK_BRANCH_POINT, type MockFileChange, sampleNewFilePatch, samplePatch } from "../src/mainview/engine/mock-file-changes";
-import { changesBusy } from "../src/mainview/store/state";
+import { changesBusy, readsQuietly } from "../src/mainview/store/state";
 import { createAppStore } from "../src/mainview/store/store";
 import type { Engine } from "../src/shared/engine";
 import type { Comparison, FileChange, FileChangesResult, FileDiffResult } from "../src/shared/file-changes";
@@ -340,7 +340,7 @@ describe("refreshing the Changes tab", () => {
 		store.showSidePanel("changes");
 		await store.readChanges(repository.path, worktree.id);
 		await store.compareChanges("uncommitted");
-		return { store, repository, worktree, report: (path: string) => report(path) };
+		return { store, repository, worktree, base, report: (path: string) => report(path) };
 	}
 
 	const bar = (markup: string) => /<div class="changes-bar">(.*?)<\/div>/.exec(markup)?.[1] ?? "";
@@ -375,20 +375,114 @@ describe("refreshing the Changes tab", () => {
 		await reloading;
 	});
 
-	test("the sidebar's Refresh, a reported change, and a read of the changes show the spinner too", async () => {
-		const { store, repository, worktree, report } = await shown();
+	test("the sidebar's Refresh and a direct read of the changes show the spinner too", async () => {
+		const { store, repository, worktree } = await shown();
 		const all = store.refresh();
 		expect(bar(render(store))).toContain(SPINNER);
 		await all;
 
-		report(repository.path);
-		expect(bar(render(store))).toContain(SPINNER);
-		expect(bar(render(store))).toContain(ANNOUNCED);
 		await settle();
-
 		const reading = store.readChanges(repository.path, worktree.id);
 		expect(bar(render(store))).toContain(SPINNER);
 		await reading;
+	});
+
+	test("changes the file watch reports, again and again, never dim the list, show the spinner, announce, or disable Refresh", async () => {
+		const { store, repository, worktree, report } = await shown();
+		for (let round = 0; round < 5; round++) {
+			report(repository.path);
+			const markup = render(store);
+			expect(bar(markup)).not.toContain("changes-spinner");
+			expect(bar(markup)).toContain(QUIET);
+			expect(bar(markup)).not.toContain("disabled");
+			expect(markup).toContain('<div class="change-groups">');
+			// What the reader does when the worktree is a new object: it asks for a read that follows the reload.
+			await settle();
+			const reading = store.readChanges(repository.path, worktree.id, { follows: true });
+			expect(bar(render(store))).not.toContain("changes-spinner");
+			expect(render(store)).toContain('<div class="change-groups">');
+			await reading;
+		}
+	});
+
+	test("a read after the person's own reload shows the spinner, even with the file watch's reload running first", async () => {
+		const { store, repository, worktree, report } = await shown();
+		report(repository.path);
+		const reloading = store.reloadRepository(repository.path);
+		expect(bar(render(store))).toContain(SPINNER);
+		await reloading;
+		const reading = store.readChanges(repository.path, worktree.id, { follows: true });
+		expect(bar(render(store))).toContain(SPINNER);
+		await reading;
+		// Only the one read: the next reload is the watch's again.
+		report(repository.path);
+		await settle();
+		const next = store.readChanges(repository.path, worktree.id, { follows: true });
+		expect(bar(render(store))).not.toContain("changes-spinner");
+		await next;
+	});
+
+	test("a read that follows only quietly keeps a list on screen for the comparison chosen", () => {
+		const view = (patch: object) => ({ worktree: "w", files: [], compared: "uncommitted", ...patch }) as never;
+		expect(readsQuietly(view({}), "w", false)).toBe(true);
+		expect(readsQuietly(view({}), "w", true)).toBe(false);
+		expect(readsQuietly(null, "w", false)).toBe(false);
+		expect(readsQuietly(view({ files: null }), "w", false)).toBe(false);
+		expect(readsQuietly(view({}), "v", false)).toBe(false);
+	});
+
+	test("a quiet read with the same result leaves the changes as they were, and a new file still shows, quietly", async () => {
+		const { store, repository, worktree, base } = await shown();
+		const before = store.getState().changes!;
+		await store.readChanges(repository.path, worktree.id, { follows: true });
+		expect(store.getState().changes).toBe(before);
+
+		const added = { change: { area: "untracked", kind: "added", path: "src/agent-wrote-this.ts", previousPath: null, added: null, removed: null, version: "" }, patch: "" } as const;
+		base.setFileChanges(worktree.path, [added] as never);
+		const reading = store.readChanges(repository.path, worktree.id, { follows: true });
+		expect(render(store)).toContain('<div class="change-groups">');
+		await reading;
+		expect(store.getState().changes?.files?.map(file => file.path)).toEqual(["src/agent-wrote-this.ts"]);
+	});
+
+	test("with a file open in the diff tab, a quiet read with the same result leaves the changes and its diff as they were", async () => {
+		const { store, repository, worktree } = await shown();
+		const file = store.getState().changes!.files![0]!;
+		await store.selectChangedFile(file);
+		const before = store.getState().changes!;
+		expect(before.diff).not.toBeNull();
+		await store.readChanges(repository.path, worktree.id, { follows: true });
+		expect(store.getState().changes).toBe(before);
+	});
+
+	test("a worktree whose base cannot be used, left on the default comparison, reads quietly too", async () => {
+		const base = createMockEngine(browserSampleRepositories);
+		const store = await started(base);
+		const everyone = store.getState().repositories.flatMap(repository => repository.worktrees.filter(worktree => worktree.pathExists).map(worktree => ({ repository, worktree })));
+		store.showSidePanel("changes");
+		let unusable: (typeof everyone)[number] | null = null;
+		for (const candidate of everyone) {
+			store.select(candidate.worktree.id);
+			await store.readChanges(candidate.repository.path, candidate.worktree.id);
+			const read = store.getState().changes;
+			// Base is the default comparison, so Uncommitted here means the base could not be used.
+			if (read?.worktree === candidate.worktree.id && read.compared === "uncommitted" && read.files !== null) {
+				unusable = candidate;
+				break;
+			}
+		}
+		expect(unusable).not.toBeNull();
+		await store.readChanges(unusable!.repository.path, unusable!.worktree.id, { follows: true });
+		const reading = store.readChanges(unusable!.repository.path, unusable!.worktree.id, { follows: true });
+		expect(store.getState().operations).toEqual([]);
+		await reading;
+	});
+
+	test("a quiet read that fails still shows its problem", async () => {
+		const { store, repository, worktree, base } = await shown();
+		base.failFileChanges("Git is busy");
+		await store.readChanges(repository.path, worktree.id, { follows: true });
+		expect(store.getState().changes?.problem).toBe("Git is busy");
 	});
 
 	test("switching Compare with shows the spinner, and says Reading changes in place of the old counts, not Refreshing as well", async () => {
