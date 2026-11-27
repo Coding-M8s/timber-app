@@ -5717,8 +5717,8 @@ acts out `timber new feat/x` typed in a terminal with Timber's agent on.
 Every agent the app knows by name is one row of one table, `AGENTS` in
 `src/shared/agent-registry.ts`: pure data, read by the main process and the
 interface alike. Its rows are Claude Code, Codex, Cursor CLI, Gemini CLI,
-Grok Build, OpenCode, and GitHub Copilot CLI. An agent that is not in
-it still runs from Settings, as typed, fresh after a restart, with letters
+Grok Build, OpenCode, GitHub Copilot CLI, Qwen Code, Amp, and Pi. An agent
+that is not in it still runs from Settings, as typed, fresh after a restart, with letters
 for its mark. Each row has:
 
 - **`id`**: stable, such as `claude`, `codex`, or `cursor`. A running
@@ -5758,8 +5758,9 @@ for its mark. Each row has:
   program's, as above.
 - **`arenaTool`**: its tool for `timber arena new --tool`, as Timber names
   it, or null when Timber runs no arena of it natively. Every row has one
-  today, equal to its id. An arena group offers the tool only while the
-  Timber found lists it (see [arenas](#arenas), "Which tools a group
+  today, equal to its id. Amp's is not offered in an arena group, since
+  Timber lists it as not interactive. An arena group offers the tool only
+  while the Timber found lists it (see [arenas](#arenas), "Which tools a group
   offers").
 - **`mark`**: the official mark as SVG path data (`paths`, each with its
   own `fillRule` or `opacity` when the maker's has one), its view box, its
@@ -5773,7 +5774,9 @@ for its mark. Each row has:
   short options as `pickingLetters`), and where its conversations are kept
   (`conversations`: the folder layout `store`, its folder variable, its
   folder in `XDG_CONFIG_HOME` when it reads that variable, as Cursor CLI
-  does, and its folder in the home folder). See
+  does, and its folder in the home folder). A row's Config folder sets
+  `PI_CODING_AGENT_DIR` or `QWEN_HOME`, which hold those agents' sign-in and
+  settings too, as `CLAUDE_CONFIG_DIR` does for Claude Code. See
   [going back to a conversation](#going-back-to-a-conversation).
 - **`generate`**: how it runs once, without a session, to write text, or
   null: the arguments after its executable, files written to its empty
@@ -5784,12 +5787,19 @@ for its mark. Each row has:
   (`status`: the arguments, the kind of `answer`, keys in the environment it
   works with but the command does not count, and the version and system it
   was run with), or null, and the arguments that sign in (`login`), null for
-  every agent for now. See [signed in or not](#signed-in-or-not).
+  every agent but Amp, whose is `amp login`; nothing reads it yet. See
+  [signed in or not](#signed-in-or-not).
 - **`status`**: how it reports its status, `osc-7501`, `hook`, or `none`,
-  and the start of the `app` it reports, such as `claude` for `claude-code`,
-  which gives its mark to any session that reports it. Claude Code, Codex,
-  Grok Build, and GitHub Copilot CLI report through OSC 7501 (`app`
-  `claude`, `codex`, `grok`, `copilot`), with the states each reports (`reports`), which Settings, Agents names.
+  and the `app` it reports, or that with a `-` and more after it, such as
+  `claude` for `claude-code` (so `claude-code` is Claude Code and `pine` is
+  not Pi), which gives its mark to any session that reports it. Claude
+  Code, Codex, Grok Build, GitHub Copilot CLI, Qwen Code (`qwen`, which
+  reports `qwen-code`), Amp (`amp`), and Pi (`pi`) report through OSC 7501
+  (`app` `claude`, `codex`, `grok`, `copilot`, `qwen`, `amp`, `pi`), with the
+  states each reports (`reports`), which Settings, Agents names. Amp's row
+  has `silentUntilInput`: Amp probes but reports nothing, not even `idle`,
+  until its first input, so until it has reported once a prompt waits for
+  its bracketed paste, as for an agent that never probed.
   Cursor CLI and Gemini CLI report through a status hook (`hook`: its file
   in the home folder, its format, the events, the state each gives and any
   matcher, the timeout in seconds, and the version checked); see
@@ -5848,6 +5858,13 @@ command that is known of. OpenCode 1.19.6 has `opencode auth list`, but from
 its source it prints a drawn list with no `--format`; it was not run. All
 four are not known.
 
+Qwen Code 0.28.4, Amp 0.0.1795809628-g8ae72c, and Pi 1.7.0 are not known
+either, checked on Linux on 2026-11-27. Qwen Code's `qwen auth` is listed as
+removed in its `--help`; it signs in with `/auth` inside it. `amp login`
+signs in through a device code in the browser, and no command says whether
+Amp is signed in. Pi signs in with `/login` inside it and has no status
+command. Their rows have `signIn.status` null.
+
 - **States.** Signed in or signed out only when the exit code and the answer
   both say so (`readSignIn` in `src/shared/agent-sign-in.ts`). Anything else
   is not known, with the reason: no command, not asked, could not start, over
@@ -5903,6 +5920,9 @@ Verified on Linux, against each installed version:
 | Gemini CLI | not verified | `gemini <args>` | starts fresh | not installed on the machine it was checked on, so not run. Its 0.70.0 package shows `--session-id <uuid>` and `--resume <uuid>`, for a later change |
 | OpenCode | not verified | `opencode <args>` | starts fresh | its ways back were not checked; 1.19.6 and 2.4.1 were run for their status only (issue 353) |
 | GitHub Copilot CLI | not verified | `copilot <args>` | starts fresh | only the editor's `copilot` stub was installed; 1.0.116 was run for its status only (issue 354), and its ways back were not checked |
+| Qwen Code 0.28.4 | 2026-11-27 | `qwen --session-id <uuid> <args>`, with a UUID the app makes | `qwen --resume <uuid> <args>` | `qwen --help`: "`--session-id` Specify a session ID for this run."; "`-r, --resume` Resume a specific session by its ID. Use without an ID to show session picker." |
+| Pi 1.7.0 | 2026-11-27 | `pi --session-id <uuid> <args>`, with a UUID the app makes | `pi --session-id <uuid> <args>`, the same words | `pi --help`: "`--session-id <id>` Use the current directory's existing session with the ID, creating it otherwise" |
+| Amp 0.0.1795809628-g8ae72c | 2026-11-27, starts fresh | `amp <args>` | starts fresh | `amp threads continue <id>` goes back, but not a way back for the app: threads are on Amp's servers, no flag sets a new thread's id, and its only local record is an undocumented file with a hashed name |
 
 An agent the table marks not verified has `resume: null` in the registry:
 it starts as typed and fresh after a restart, like a custom agent, until
@@ -5914,7 +5934,7 @@ option that takes several values (Codex's `-i, --image <FILE>...`) and no
 
 - **Which agents.** The agent picked for the row in Settings, when one
   was, else the one the executable's last path part as typed in Settings
-  is: `claude`, `codex`, `grok`, or `cursor-agent` (or `agent` leading to
+  is: `claude`, `codex`, `grok`, `cursor-agent`, `qwen`, or `pi` (or `agent` leading to
   Cursor's, see [the agent registry](#the-agent-registry); `.exe` cut, in
   any case, on Windows). Only the agents of the registry with a `resume`
   go back. With Detect, anything
@@ -5930,7 +5950,9 @@ option that takes several values (Codex's `-i, --image <FILE>...`) and no
   `--session-id`, `--resume`, `-r`, `--continue`, `-c`, `--from-pr`,
   `--teleport`, `--print`, `-p`, `--fork-session`, `--cloud`, `--bg`,
   `--background`, `--help`, `-h`, `--version`, `-v`, also as `--resume=<id>`
-  and inside a group of short options such as `-cp`; for Codex `resume`,
+  and inside a group of short options such as `-cp` (not for Pi, which reads
+  no group of short options and has short options of several letters, such
+  as `-nc`, so those keep its way back); for Codex `resume`,
   `fork`, `exec`, `e`, `review`, `--help`, `-h`, `--version`, `-V`; for
   Grok Build `--session-id`, `-s`, `--resume`, `-r`, `--continue`, `-c`,
   `--fork-session`, `--single`, `-p`, `--prompt-file`, `--prompt-json`,
@@ -5938,7 +5960,14 @@ option that takes several values (Codex's `-i, --image <FILE>...`) and no
   Cursor CLI `--resume`, `--continue`, `--print`, `-p`, `--new-session-id`,
   `--cloud`, `-c`, `--background`, `-b` (both deprecated, still read),
   `--worktree`, `-w`, `--workspace`, `--list-models`, `--help`, `-h`,
-  `--version`, `-v`. The worktree, `--cwd`, and `--workspace` options start
+  `--version`, `-v`; for Qwen Code `--session-id`, `--resume`, `-r`,
+  `--continue`, `-c`, `--fork-session`, `--worktree`, `-p`, `--prompt`,
+  `--acp`, `--experimental-acp`, `--input-format`, `--output-format`, `-o`,
+  `--list-extensions`, `-l`, `--help`, `-h`, `--version`, `-v`; for
+  Pi `--continue`, `-c`, `--resume`, `-r`, `--session`, `--session-id`,
+  `--fork`, `--no-session`, `--session-dir`, `--agent-dir`, `--print`, `-p`,
+  `--mode`, `--export`, `--list-models`, `--help`, `-h`, `--version`, `-v`.
+  The worktree, `--cwd`, and `--workspace` options start
   the agent in another folder, where the app would not find its
   conversation, and a Grok started with `--worktree` again would make
   another worktree. So is a
@@ -5961,9 +5990,20 @@ option that takes several values (Codex's `-i, --image <FILE>...`) and no
   a title, and a `store.db`; `<config>` is `$CURSOR_CONFIG_DIR`, else
   `$XDG_CONFIG_HOME/cursor`, else `~/.cursor`, in the order Cursor's own
   code reads them; the app takes either variable only as a full path, so a
-  relative one is looked for in the default and the agent starts fresh. A row's Config folder takes the place of `<config>` or `<home>`:
-  the agent starts with `CLAUDE_CONFIG_DIR`, `CODEX_HOME`, `GROK_HOME`, or
-  `CURSOR_CONFIG_DIR` set to it, also when its arguments
+  relative one is looked for in the default and the agent starts fresh.
+  Qwen Code keeps each as `<home>/projects/<folder>/chats/<id>.jsonl`,
+  `<home>` being `$QWEN_HOME` or `~/.qwen`, where `<folder>` is the working
+  folder with every character that is not a letter or digit as `-`; before
+  a first message only a `<id>.runtime.json` is there. Pi keeps each as
+  `<agent>/sessions/<folder>/<time>_<id>.jsonl`, `<agent>` being
+  `$PI_CODING_AGENT_DIR` or `~/.pi/agent`, where `<folder>` is the working
+  folder with each `/` as `-`, between two `--`; the id is compared in lower
+  case. `QWEN_RUNTIME_DIR`, `PI_CODING_AGENT_SESSION_DIR`, Pi's
+  `--session-dir`, and Pi's `sessionDir` setting move them, so the app does
+  not find them and the agent starts fresh with the note. A row's Config
+  folder takes the place of `<config>` or `<home>`: the agent starts with
+  `CLAUDE_CONFIG_DIR`, `CODEX_HOME`, `GROK_HOME`, `CURSOR_CONFIG_DIR`,
+  `QWEN_HOME`, or `PI_CODING_AGENT_DIR` set to it, also when its arguments
   start it as typed, and its conversation is looked for there, at start
   and at quit. Without one, the variable is left as the app has it, and
   the folder is the one it names or the default. The folder is fixed when
@@ -5983,11 +6023,16 @@ option that takes several values (Codex's `-i, --image <FILE>...`) and no
   used only when the conversation's file is found in that agent's own
   folder, because the agents refuse an id they do not know: Claude Code
   prints "No conversation found with session ID" and exits, Codex "No
-  saved session found with ID", and Grok Build "No saved copy of session
-  ... was found remotely" after looking for it on its servers. Cursor CLI
-  starts a new empty chat for an id it does not know, without a word.
-  Grok is checked for `sessions/<any folder>/<uuid>/summary.json`, and
-  Cursor for `chats/<any folder>/<uuid>/meta.json`. Otherwise the agent
+  saved session found with ID", Qwen Code "No saved session found with ID",
+  and Grok Build "No saved copy of session ... was found remotely" after
+  looking for it on its servers. Cursor CLI starts a new empty chat for an
+  id it does not know, without a word. Pi starts a new session with an id it
+  does not know, so the app checks first.
+  Grok is checked for `sessions/<any folder>/<uuid>/summary.json`, Cursor for
+  `chats/<any folder>/<uuid>/meta.json`, Qwen for
+  `projects/<any folder>/chats/<uuid>.jsonl`, and Pi for
+  `sessions/<any folder>/<time>_<uuid>.jsonl`, its name compared in lower
+  case. Otherwise the agent
   starts fresh, and a
   dim line at the top of its terminal says "The saved conversation was not
   found, so <agent> started fresh." A Claude id is never found under
@@ -6008,6 +6053,19 @@ option that takes several values (Codex's `-i, --image <FILE>...`) and no
   it asks whether to trust the folder), so the id is saved at quit only
   when its `summary.json` is there. A session killed with SIGKILL, as the
   app's quit does, went back with its message.
+- **Qwen Code** gets `--session-id` with a new UUID on every fresh start, as
+  Claude Code does. Its id is saved at quit only when its `<id>.jsonl` is
+  there. Before a first message only `<id>.runtime.json` is written, which
+  `--resume` refuses, so such a session starts fresh after a restart, without
+  a note that it was not found. Qwen Code refuses `--session-id` for an id
+  that already exists, so it gets `--resume` to go back, never both.
+- **Pi** takes the same word for a fresh start and to go back: `--session-id`
+  with a UUID the app makes, so its id is exact from the first moment. Its
+  session file is written only once there is a message, and its id is saved
+  at quit only when that file is there, so a session that never got one
+  starts fresh after a restart, without a note that it was not found.
+  On every fresh start Pi prints "Warning: No project session found with id
+  '<id>'; creating a new session with that id." at the top of its terminal.
 - **Cursor CLI** has no documented flag that sets the id of a new chat, so
   its id is read at quit from its chats folder, as Codex's is, with the
   same rules for which sessions are searched (below): the newest chat in
@@ -6067,7 +6125,11 @@ option that takes several values (Codex's `-i, --image <FILE>...`) and no
   session started can be taken for it, and a Cursor session that went
   back to an older chat is saved with a newer chat when one was started
   there meanwhile. A new conversation started inside Grok Build is not
-  followed, as with Claude Code's `/clear`. A Grok session kept only on
+  followed, as with Claude Code's `/clear`. A new conversation started inside
+  Qwen Code or Pi is not followed, as with Claude Code's `/clear`. A Pi
+  session in another folder passes the check, which looks in every folder,
+  but Pi looks only in the working folder, so the session starts as new
+  there. A Grok session kept only on
   Grok's servers, and no longer on this machine, starts fresh with the
   note. When an agent changes where
   or how it keeps conversations, nothing is found and it starts fresh,
@@ -6104,7 +6166,9 @@ By its reporter's code, a root with one busy session copies that session's
 title and message, and one with several says how many; a record is written
 only when it changed; and quitting writes a root `clear`, which also takes
 the done away. GitHub Copilot CLI 1.0.116 reports itself,
-without a probe (issue 354, next), so it gets no hook.
+without a probe (issue 354, next), so it gets no hook. Qwen Code 0.28.4, Amp
+0.0.1795809628-g8ae72c, and Pi 1.7.0 report themselves too (issue 356, next),
+so they get no hook.
 
 **GitHub Copilot CLI.** Run with 1.0.116 on Linux x64 (Pop!_OS 24.04) on
 2026-11-25, in a sandbox with no network, no sign-in, and a stand-in model
@@ -6176,6 +6240,26 @@ With its servers unreachable it stays `working`, retrying, as Cursor does.
   under `[ui.notifications]` in Grok's own `config.toml` is the person's way
   to turn the reports on; checked for VS Code's variable, not in a
   multiplexer. `"off"` turns them off. The app writes neither.
+
+**Qwen Code, Amp, and Pi** (issue 356), run on Linux x64 (Fedora Linux 44)
+with Bun 1.4.2 on 2026-11-27, each in a pseudo terminal that answered the
+app's probe (see [verification](verification.md)).
+
+- Qwen Code 0.28.4 has no probe. It is `idle` about 1.7 seconds after start,
+  `working` and `done` for a turn, and `blocked` with `kind=permission` at a
+  shell command's approval, then `working` once answered. It reports as
+  `qwen-code`, which the row's `app` `qwen` matches.
+- Amp 0.0.1795809628-g8ae72c probes at start, then reports nothing, not even
+  `idle`, until its first input. After that it reports `idle`, `working`, and
+  `done`. So `silentUntilInput` is set, and a prompt for a new Amp waits for
+  its bracketed paste as for an agent that never probed, which is also how a
+  first-run or sign-in screen with bracketed paste on gets the prompt. Its
+  `blocked` has no kind. By default it asks no approvals; with an ask rule
+  for its shell tool, it reports `blocked` with the message "Input needed".
+- Pi 1.7.0 answers the probe, then reports `idle` at once, `working` and
+  `done` for a turn, and `clear` at exit. It gives `blocked` only for a
+  dialog of an extension, since it asks no tool approvals by default (read in
+  its source).
 
 **Why this is not reading agent output.** OSC 7501 is a terminal control
 sequence the program addresses to the terminal, like a title (OSC 0) or a
@@ -6332,13 +6416,15 @@ What the agent prints on screen is still never read, parsed, or answered.
   reaches past the sidebar at its narrowest width. The agents of the
   [agent registry](#the-agent-registry), known by an agent session's
   `program` or executable (`claude`, `codex`, `cursor-agent`, `gemini`,
-  `grok`, `opencode`, `copilot`, with `.exe` cut on Windows, and `agent`
-  when it leads to Cursor's file) or by a reported `app` starting with
-  `claude` or `codex` (`agentBrand` in `src/shared/session-status.ts`),
+  `grok`, `opencode`, `copilot`, `qwen`, `amp`, `pi`, with `.exe` cut on
+  Windows, and `agent` when it leads to Cursor's file) or by a reported `app`
+  (the agent's, or that with a `-` and more after it, such as `claude-code`;
+  `agentBrand` in `src/shared/session-status.ts`),
   show their makers' official marks instead of letters (`AgentIcon.tsx`,
   drawing each row's `mark`): Claude's spark in its own orange, Gemini's
   spark in its gradient, and the others (OpenAI's mark, Cursor's cube,
-  Grok's mark, OpenCode's mark, GitHub's Copilot mark) in the text color. On its chip, the same mark in a quiet
+  Grok's mark, OpenCode's mark, GitHub's Copilot mark, Qwen Code's mark,
+  Amp's wordmark, Pi's mark) in the text color. On its chip, the same mark in a quiet
   outline takes the place of the agent star, and the same shape, with the decoded
   message in the chip's tooltip and its state in words beside the chips. A
   collapsed repository header sums up its agents' unseen states, such as
@@ -6534,8 +6620,8 @@ Off for every agent until the person turns it on.
   written but 0.70.0 does not apply it to this event), `AfterTool` working
   again once an approved tool ran (`BeforeTool` runs before the person is
   asked, so it cannot), and `AfterAgent` done, once per prompt after the
-  last reply. Codex, Grok Build, and GitHub Copilot CLI report themselves
-  and get no hook (Grok Build's is under [agent status](#agent-status)).
+  last reply. Codex, Grok Build, GitHub Copilot CLI, Qwen Code, Amp, and Pi
+  report themselves and get no hook (Grok Build's is under [agent status](#agent-status)).
 - **Gemini CLI's hook that is On but reports nothing** (as read in 0.70.0):
   - *A folder Gemini CLI does not trust.* With folder trust on, as by
     default, Gemini CLI runs no hooks from its settings in a folder it does

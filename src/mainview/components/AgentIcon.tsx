@@ -6,7 +6,8 @@ import type { AgentBrand } from "../../shared/session-status";
  * An agent's official mark, from the agent registry (`mark` in
  * src/shared/agent-registry.ts, which says where each was taken from):
  * Claude's spark for Claude Code, OpenAI's mark for Codex, Cursor's cube,
- * Gemini's spark, Grok's mark, OpenCode's mark, and GitHub's Copilot mark.
+ * Gemini's spark, Grok's mark, OpenCode's mark, GitHub's Copilot mark, Qwen Code's mark,
+ * Amp's wordmark, and Pi's mark.
  * They are the makers' trademarks, shown only to say which agent a session
  * runs. Hidden from assistive technology: the agent's name is always in
  * words beside it or in a description.

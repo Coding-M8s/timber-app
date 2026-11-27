@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
 	claudeConfigFolder, claudeConversationExists, codexConversationExists, codexHomeFolder, conversationExists, conversationFinders, conversationFolder,
-	cursorConversationExists, findCodexConversation, findCursorConversation, grokConversationExists,
+	cursorConversationExists, findCodexConversation, findCursorConversation, grokConversationExists, piConversationExists, qwenConversationExists,
 } from "../src/bun/agent-conversations";
 import { agentById } from "../src/shared/agent-registry";
 
@@ -65,7 +65,7 @@ describe("where the agents keep their conversations", () => {
 	});
 
 	test("every layout has its check, and the agents found at quit have their search", () => {
-		expect(Object.keys(conversationExists).sort()).toEqual(["claude-projects", "codex-sessions", "cursor-chats", "grok-sessions"]);
+		expect(Object.keys(conversationExists).sort()).toEqual(["claude-projects", "codex-sessions", "cursor-chats", "grok-sessions", "pi-sessions", "qwen-projects"]);
 		expect(Object.keys(conversationFinders).sort()).toEqual(["codex-sessions", "cursor-chats"]);
 	});
 });
@@ -177,6 +177,72 @@ describe("finding the Cursor CLI chat a session is in", () => {
 
 	test("a folder that is not there finds nothing", () => {
 		expect(findCursorConversation({ folder: join(root, "nowhere"), cwd: work, since, taken: new Set() })).toBeNull();
+	});
+});
+
+describe("where Qwen Code and Pi keep theirs", () => {
+	test("Qwen Code's is QWEN_HOME or ~/.qwen, and Pi's is PI_CODING_AGENT_DIR or ~/.pi/agent", () => {
+		const qwen = agentById("qwen").resume!.conversations;
+		const pi = agentById("pi").resume!.conversations;
+		expect(conversationFolder(qwen, { QWEN_HOME: "/cfg/qwen" }, "/home/a")).toBe("/cfg/qwen");
+		expect(conversationFolder(qwen, { QWEN_HOME: "relative" }, "/home/a")).toBe(join("/home/a", ".qwen"));
+		expect(conversationFolder(pi, { PI_CODING_AGENT_DIR: "/cfg/pi" }, "/home/a")).toBe("/cfg/pi");
+		expect(conversationFolder(pi, {}, "/home/a")).toBe(join("/home/a", ".pi", "agent"));
+	});
+});
+
+describe("whether a Qwen Code conversation is there", () => {
+	test("found as chats/<id>.jsonl under any project folder, and not found when it is not", () => {
+		mkdirSync(join(root, "projects", "-work-a", "chats"), { recursive: true });
+		mkdirSync(join(root, "projects", "-work-b", "chats"), { recursive: true });
+		writeFileSync(join(root, "projects", "-work-b", "chats", `${ONE}.jsonl`), "{}\n");
+		expect(qwenConversationExists(ONE, root)).toBe(true);
+		expect(qwenConversationExists(TWO, root)).toBe(false);
+	});
+
+	test("a runtime file alone, as before the first message, is not a conversation, and nor is a file outside chats", () => {
+		mkdirSync(join(root, "projects", "p", "chats"), { recursive: true });
+		writeFileSync(join(root, "projects", "p", "chats", `${ONE}.runtime.json`), "{}");
+		writeFileSync(join(root, "projects", "p", `${TWO}.jsonl`), "{}\n");
+		expect(qwenConversationExists(ONE, root)).toBe(false);
+		expect(qwenConversationExists(TWO, root)).toBe(false);
+	});
+
+	test("a folder that is not there, or an id that is not a UUID, gives false", () => {
+		expect(qwenConversationExists(ONE, join(root, "nowhere"))).toBe(false);
+		mkdirSync(join(root, "projects", "p", "chats"), { recursive: true });
+		writeFileSync(join(root, "projects", "p", "chats", "--resume.jsonl"), "{}\n");
+		expect(qwenConversationExists("--resume", root)).toBe(false);
+		expect(qwenConversationExists(`../${ONE}`, root)).toBe(false);
+	});
+});
+
+describe("whether a Pi conversation is there", () => {
+	test("found as sessions/<folder>/<time>_<id>.jsonl, compared in lower case, and not found when it is not", () => {
+		mkdirSync(join(root, "sessions", "--work-a--"), { recursive: true });
+		mkdirSync(join(root, "sessions", "--work-b--"), { recursive: true });
+		writeFileSync(join(root, "sessions", "--work-b--", `2026-11-27T10-00-00-000Z_${ONE.toUpperCase()}.jsonl`), "{}\n");
+		expect(piConversationExists(ONE, root)).toBe(true);
+		expect(piConversationExists(ONE.toUpperCase(), root)).toBe(true);
+		expect(piConversationExists(TWO, root)).toBe(false);
+	});
+
+	test("a file of another name or kind is not a conversation", () => {
+		mkdirSync(join(root, "sessions", "p"), { recursive: true });
+		writeFileSync(join(root, "sessions", "p", `${ONE}.jsonl`), "{}\n");
+		writeFileSync(join(root, "sessions", "p", `2026-11-27_${TWO}.json`), "{}");
+		writeFileSync(join(root, "sessions", `x_${THREE}.jsonl`), "{}\n");
+		expect(piConversationExists(ONE, root)).toBe(false);
+		expect(piConversationExists(TWO, root)).toBe(false);
+		expect(piConversationExists(THREE, root)).toBe(false);
+	});
+
+	test("a folder that is not there, or an id that is not a UUID, gives false", () => {
+		expect(piConversationExists(ONE, join(root, "nowhere"))).toBe(false);
+		mkdirSync(join(root, "sessions", "p"), { recursive: true });
+		writeFileSync(join(root, "sessions", "p", "x_--resume.jsonl"), "{}\n");
+		expect(piConversationExists("--resume", root)).toBe(false);
+		expect(piConversationExists("resume", root)).toBe(false);
 	});
 });
 

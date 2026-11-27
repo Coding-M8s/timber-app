@@ -14,7 +14,7 @@ describe("an agent's mark", () => {
 	});
 
 	test("one-color marks take the theme's text color, so they read in light and dark themes", () => {
-		for (const id of ["codex", "cursor", "grok", "opencode", "copilot"] as const) {
+		for (const id of ["codex", "cursor", "grok", "opencode", "copilot", "qwen", "amp", "pi"] as const) {
 			const markup = renderToStaticMarkup(<AgentIcon brand={id} />);
 			expect(markup).toContain('fill="currentColor"');
 			expect(markup).not.toContain("<radialGradient");

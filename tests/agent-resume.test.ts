@@ -11,6 +11,31 @@ describe("which agents can go back to their conversation", () => {
 		expect(resumableAgent("C:\\tools\\CODEX.EXE", [])).toBe("codex");
 	});
 
+	test("Qwen Code and Pi by their executable's name, and not a name that only starts the same", () => {
+		expect(resumableAgent("qwen", [])).toBe("qwen");
+		expect(resumableAgent("/usr/local/bin/pi", ["--model", "x"])).toBe("pi");
+		expect(resumableAgent("C:\\tools\\pi.exe", [])).toBe("pi");
+		for (const executable of ["pipx", "pine", "qwen-code", "mypi"]) expect(resumableAgent(executable, [])).toBeNull();
+	});
+
+	test("Qwen Code and Pi started with a way to pick a conversation, or to run without one, start as typed", () => {
+		for (const args of [["--session-id", "x"], ["--session-id=x"], ["--resume", "x"], ["-r"], ["--continue"], ["-c"], ["-cp"], ["--fork-session"], ["--worktree"], ["-p", "hi"], ["--prompt", "hi"], ["--acp"], ["--experimental-acp"], ["--output-format", "json"], ["-o", "json"], ["--input-format", "stream-json"], ["-l"], ["--help"], ["--version"], ["-v"]]) {
+			expect(resumableAgent("qwen", args)).toBeNull();
+		}
+		for (const args of [["--session-id", "x"], ["--session=x"], ["--continue"], ["-c"], ["-r"], ["--resume"], ["--fork", "x"], ["--no-session"], ["--session-dir", "d"], ["--agent-dir", "d"], ["-p", "hi"], ["--print"], ["--mode", "json"], ["--export", "f"], ["--list-models"], ["-h"], ["-v"]]) {
+			expect(resumableAgent("pi", args)).toBeNull();
+		}
+		expect(resumableAgent("qwen", ["--model", "m", "--approval-mode", "default"])).toBe("qwen");
+		expect(resumableAgent("pi", ["--model", "m", "--thinking", "high"])).toBe("pi");
+		// Pi reads no group of short options, and its own short options have several letters.
+		for (const args of [["-nc"], ["-np"], ["-nt"], ["-ne", "-ns"]]) expect(resumableAgent("pi", args)).toBe("pi");
+	});
+
+	test("Amp starts as typed, with no way back", () => {
+		expect(resumableAgent("amp", [])).toBeNull();
+		expect(resumableAgent("amp", ["-m", "openai/gpt-6-luna"])).toBeNull();
+	});
+
 	test("any other program is not one", () => {
 		for (const executable of ["aider", "claude-wrapper", "mycodex", "/bin/sh", "", "claude.sh"]) expect(resumableAgent(executable, [])).toBeNull();
 	});
@@ -94,6 +119,22 @@ describe("the arguments an agent starts with", () => {
 		expect(agentStartArguments("cursor", ["--add-dir", "../docs"], { resume: ID })).toEqual(["--resume", ID, "--add-dir", "../docs"]);
 		expect(agentStartArguments("cursor", ["--model", "gpt-5"], { fresh: ID })).toEqual(["--model", "gpt-5"]);
 		expect(agentStartArguments("cursor", ["--model", "gpt-5"], null)).toEqual(["--model", "gpt-5"]);
+	});
+
+	test("Qwen Code resumes with --resume and starts fresh with --session-id, an id of the app's choosing", () => {
+		expect(agentStartArguments("qwen", ["--approval-mode", "default"], { resume: ID })).toEqual(["--resume", ID, "--approval-mode", "default"]);
+		expect(agentStartArguments("qwen", ["--approval-mode", "default"], { fresh: ID })).toEqual(["--session-id", ID, "--approval-mode", "default"]);
+		expect(agentStartArguments("qwen", ["--approval-mode", "default"], null)).toEqual(["--approval-mode", "default"]);
+	});
+
+	test("Pi goes back and starts fresh with the same --session-id, which creates a session it does not have", () => {
+		expect(agentStartArguments("pi", ["--model", "m"], { resume: ID })).toEqual(["--session-id", ID, "--model", "m"]);
+		expect(agentStartArguments("pi", ["--model", "m"], { fresh: ID })).toEqual(["--session-id", ID, "--model", "m"]);
+		expect(agentStartArguments("pi", ["--model", "m"], null)).toEqual(["--model", "m"]);
+	});
+
+	test("Amp keeps its arguments as typed whatever conversation it is given", () => {
+		for (const conversation of [{ resume: ID }, { fresh: ID }, null]) expect(agentStartArguments("amp", ["-m", "x"], conversation)).toEqual(["-m", "x"]);
 	});
 
 	test("Gemini CLI, OpenCode, and GitHub Copilot CLI start as typed: their ways back are not verified yet", () => {

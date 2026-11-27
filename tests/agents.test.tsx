@@ -319,7 +319,7 @@ describe("the Agents section of Settings", () => {
 
 	test("names are cleaned up on save, and the presets missing by name are offered", () => {
 		// Every agent of the registry is offered, not only the two in the list before anything was saved.
-		const OTHERS = ["Codex", "Cursor CLI", "Gemini CLI", "Grok Build", "OpenCode", "GitHub Copilot CLI"];
+		const OTHERS = ["Codex", "Cursor CLI", "Gemini CLI", "Grok Build", "OpenCode", "GitHub Copilot CLI", "Qwen Code", "Amp", "Pi"];
 		const drafts = addAgentDraft([]);
 		const typed = editAgentDraft(drafts, drafts[0]!.key, { name: "  my   agent ", command: "  agent --x " });
 		expect(agentsDraftModel(typed, []).agents).toEqual([{ name: "my agent", command: "agent --x" }]);

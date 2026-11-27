@@ -539,8 +539,11 @@ change them here first when they change.
   instead of letters, and on their chip: Claude Code (Claude's spark, in
   its orange), Codex (OpenAI's mark), Cursor CLI (Cursor's cube), Gemini
   CLI (Gemini's spark, in its gradient), Grok Build (Grok's mark), OpenCode
-  (OpenCode's mark, its inner square faint), and GitHub Copilot CLI
-  (GitHub's Copilot mark). Every mark but Claude's and Gemini's is drawn in
+  (OpenCode's mark, its inner square faint), GitHub Copilot CLI
+  (GitHub's Copilot mark), Qwen Code (Qwen Code's mark), Amp (Amp's
+  wordmark), and Pi (Pi's mark); Qwen Code 0.28.4, Amp
+  0.0.1795809628-g8ae72c, and Pi 1.7.0 are the versions tested, with the
+  others' in docs/architecture.md. Every mark but Claude's and Gemini's is drawn in
   the theme's text color, so it reads in light and dark themes alike. Each
   is its maker's trademark, shown only to say which agent a session runs.
   An agent that reports nothing shows as running.
@@ -1354,7 +1357,8 @@ logins. The app never reads a tracker login and never signs in.
   how many runs), and an optional start point. The tools are the agents the
   Timber found runs natively, by their names in Settings, Agents (Codex,
   Claude Code, Cursor CLI, and, with a Timber that lists them, Gemini CLI,
-  Grok Build, OpenCode, and GitHub Copilot CLI), then "Manual (no agent)",
+  Grok Build, OpenCode, GitHub Copilot CLI, Qwen Code, and Pi; not Amp,
+  which Timber lists as not interactive), then "Manual (no agent)",
   then the presets. The chosen tool's mark sits before its select, and a
   preset shows its tool's mark when that is one of these agents. Every tool
   takes a model; Effort is off, saying "Not for this tool", for one Timber

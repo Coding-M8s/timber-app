@@ -325,10 +325,14 @@ describe("offeredArenaTools", () => {
 			{ tool: "grok", agent: "grok", name: "Grok Build", effort: false },
 			{ tool: "opencode", agent: "opencode", name: "OpenCode", effort: false },
 			{ tool: "copilot", agent: "copilot", name: "GitHub Copilot CLI", effort: false },
+			{ tool: "qwen", agent: "qwen", name: "Qwen Code", effort: false },
+			{ tool: "pi", agent: "pi", name: "Pi", effort: false },
 		]);
 		// A registry agent that Timber lists but that would end after its task is not offered either.
-		const closing = { state: "listed" as const, tools: [{ tool: "codex", effort: true, interactive: true }, { tool: "grok", effort: false, interactive: false }] };
+		const closing = { state: "listed" as const, tools: [{ tool: "codex", effort: true, interactive: true }, { tool: "grok", effort: false, interactive: false }, { tool: "made-up-tool", effort: false, interactive: true }] };
 		expect(offeredArenaTools(closing).map(tool => tool.tool)).toEqual(["codex"]);
+		// Amp is in the registry, but Timber lists it as ending after its task, so it is not offered.
+		expect(offeredArenaTools(listed).map(tool => tool.tool)).not.toContain("amp");
 	});
 
 	test("a tool the Timber found does not list is not offered", () => {

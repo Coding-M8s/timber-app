@@ -5879,3 +5879,105 @@ with Bun 1.4.2, Git, Timber at `~/.local/bin/timber`, and Google Chrome:
   view's notes, and four others); each passed when its file was run alone.
 - `bun run typecheck` and `bun run typecheck:desktop`: both exited 0.
 - Not run: the desktop app, Windows, and macOS.
+
+Run for Qwen Code, Amp, and Pi (issue 356), Linux x64 (Fedora Linux 44) with
+Bun 1.4.2, on 2026-11-27:
+
+- Installed from npm into Node 25.8.1's global folder: `@qwen-code/qwen-code`
+  0.28.4 (`qwen`); `@sourcegraph/amp` 0.0.1795636836-g0a818e (`amp`), which
+  updated itself to 0.0.1795809628-g8ae72c between 2026-11-25 and 2026-11-27 (closed source, so its
+  compiled binary was searched for strings); and `@earendil-works/pi-coding-agent`
+  1.7.0 (`pi`), since `@mariozechner/pi-coding-agent` 0.73.1 is deprecated.
+  The source of Qwen Code and Pi was read at tags v0.28.4 and v1.7.0. No
+  Claude model was used: Qwen Code ran on OpenRouter's free
+  `nvidia/nemotron-3-ultra-550b-a55b:free`, Pi on `openai-codex/gpt-6-luna`
+  with a ChatGPT sign-in, and Amp with `-m openai/gpt-6-luna`.
+- Each ran in a pseudo terminal of 120 by 40 from a Python script, with
+  `TERM=xterm-256color`, `COLORTERM=truecolor`, `TERM_PROGRAM=timber-app`, and
+  the variables the app leaves out removed. The script answered the OSC 7501
+  probe with the app's `PROBE_ANSWER`, device attributes, cursor position, and
+  color queries, typed prompts as bracketed pastes and Enter, and logged every
+  OSC 7501 report. Each ran in a new temporary Git repository. This was not
+  the desktop app; the run through the app's own sessions is the last bullet.
+- Qwen Code 0.28.4:
+  - No probe. `state=idle:app=qwen-code` about 1.7 seconds after start. A
+    prompt gave `working` and `done`. With `--approval-mode default`, a shell
+    command gave `blocked:kind=permission`, then `working` and `done` after
+    Enter approved it. Its default approval mode ran `rm` without asking.
+  - `qwen --session-id <new uuid>` used that id. At quit it printed "To
+    continue this session, run qwen --resume <id>" and wrote
+    `projects/<folder>/chats/<id>.jsonl`, with `<id>.runtime.json` and
+    `<id>.title.json` beside it. `qwen --resume <id> --approval-mode default`
+    went back to the conversation and named a file removed in an earlier turn.
+  - `--resume` with an unknown id printed "No saved session found with ID"
+    and exited. `--session-id` with an existing id printed "Session Id ...
+    already exists (active or archived)" and exited.
+  - A `--session-id` session that quit before any message left only
+    `<id>.runtime.json`, and `--resume` then found no session.
+  - `qwen auth` is listed as "Configure authentication (removed)" in
+    `qwen --help`.
+- Pi 1.7.0:
+  - Probes. After the answer, `state=idle:app=pi` at once; a prompt gave
+    `working` and `done`; `state=clear` at exit.
+  - `pi --session-id <new uuid>` wrote `sessions/--<folder>--/<time>_<id>.jsonl`
+    once there was a message. A second `pi --session-id <same id>` went back
+    to it, answered from the earlier turn, and there was still one file.
+  - No tool approvals by default; `blocked` only for an extension's dialog
+    (source). From the source: `--session-id` cannot be combined with
+    `--session`, `--continue`, or `--resume`; the id must match
+    `^[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?$`; `PI_CODING_AGENT_DIR` (or
+    `--agent-dir`) moves the agent folder; `PI_CODING_AGENT_SESSION_DIR`,
+    `--session-dir`, and a `sessionDir` setting move the sessions.
+  - No sign-in status command; `/login` inside.
+- Amp 0.0.1795809628-g8ae72c:
+  - Probes at start, then reports nothing, not even `idle`, for 25 seconds
+    with no input. Bracketed paste was on from its first bytes. After the
+    first paste and Enter: `state=idle:app=amp`, `working`, and `done` (with a
+    base64 `msg`).
+  - Default settings ran `rm a.txt` with no approval. With a `--settings-file`
+    holding `"amp.permissions": [{"tool": "Bash", "action": "ask"}]`:
+    `working`, then `state=blocked:app=amp` with the message "Input needed" and
+    no kind, then `working` and `done` after Enter.
+  - Threads are `T-<uuidv7>` on ampcode.com. `amp threads continue <id>` goes
+    back to one; an unknown id printed "Thread https://ampcode.com/threads/T-...
+    does not exist." No flag sets a new thread's id. Locally, only
+    `~/.local/share/amp/last-threads/` holds a thread id, under a name made from
+    a hash of the folder, so Amp starts fresh after a restart.
+  - `amp login` signs in through a device code in the browser.
+- Arena tools: Timber's main branch (`src/arena/tools.ts` at 0d98eeb) lists
+  `qwen`, `amp`, and `pi`; the installed Timber 0.2.0 does not list them. Amp
+  is listed as not interactive there, so an arena group does not offer it.
+- The real Qwen Code, Amp (with `-m openai/gpt-6-luna`), and Pi through
+  `createTerminalSessions` from a Bun script, in a new temporary repository
+  with the real home folder, each started as an agent from Settings with a
+  prompt chop. The script answered device attributes, cursor position, and
+  the OSC 10 and 11 color queries as the window's terminal does; the app
+  answered the probe itself.
+  - Qwen Code: started as `qwen --session-id <uuid>`, its mark (`program`
+    and `agentBrand` `qwen`), `idle` at 1.5 seconds, the prompt sent at 2.8
+    seconds, `working`, `done`. Opened again with that id as `resume`, it
+    started as `qwen --resume <uuid>`, and its answer named the word given
+    in the first session.
+  - Pi: started as `pi --session-id <uuid>`, `idle` at 0.5 seconds, the
+    prompt sent at 0.8, `working`, `done`. Opened again with that id, it
+    started with the same words, went back to the same one session file,
+    and answered with the word from the first session.
+  - Amp: brand `amp`, no report before input, the prompt sent at 5.5 seconds
+    through the 5 second rule for an agent that keeps redrawing (its welcome
+    screen moves), then `idle`, `working`, and `done`. Run first without
+    answering device attributes and the cursor position, Amp was still
+    waiting for those answers when the prompt went at 1.8 seconds after half a
+    second of quiet, and it never took it: a session whose terminal answers
+    nothing, which the window's terminal always does, would lose the prompt.
+- Tests: `bun run test tests/agent-registry.test.ts tests/agent-resume.test.ts
+  tests/agent-conversations.test.ts tests/agent-prompt.test.ts
+  tests/arenas-parse.test.ts tests/agents.test.tsx tests/agent-row-pick.test.tsx
+  tests/agent-icon.test.tsx tests/terminals.test.ts tests/arenas-view.test.tsx
+  tests/arenas.test.ts tests/agent-lookup.test.ts tests/agent-status.test.tsx
+  tests/agent-marks-browser.test.ts tests/new-worktree-agent.test.tsx
+  tests/repository-agents.test.tsx tests/agent-sign-in.test.tsx
+  tests/status-hooks.test.ts tests/program-status.test.ts
+  tests/session-layout.test.ts`: 582 pass, 0 fail. `bun run typecheck`:
+  exited 0.
+- Not run: the desktop app, Windows, macOS, a screen reader, and the full
+  suite.

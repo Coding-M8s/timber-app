@@ -17,6 +17,22 @@ describe("when a new agent is ready for its prompt", () => {
 		expect(isReadyForPrompt({ ...probed, status: status("idle") })).toBe(true);
 	});
 
+	test("an agent that probes but stays silent until its first input, as Amp does, gets it by the paste and quiet rule until it reports, then by its status", () => {
+		const silent = { probed: true, silentUntilInput: true, pasteOnMilliseconds: 0 };
+		expect(isReadyForPrompt({ ...silent, status: null, pasteOn: false, quietMilliseconds: 10_000 })).toBe(false);
+		expect(isReadyForPrompt({ ...silent, status: null, pasteOn: true, quietMilliseconds: PROMPT_QUIET_MILLISECONDS - 1 })).toBe(false);
+		expect(isReadyForPrompt({ ...silent, status: null, pasteOn: true, quietMilliseconds: PROMPT_QUIET_MILLISECONDS })).toBe(true);
+		expect(isReadyForPrompt({ ...silent, status: null, pasteOn: true, quietMilliseconds: 10, pasteOnMilliseconds: PROMPT_BUSY_MILLISECONDS })).toBe(true);
+		// Once it reported, its status rules: working or blocked waits however quiet, idle is ready.
+		const ready = { ...silent, pasteOn: true, quietMilliseconds: 10_000, pasteOnMilliseconds: 60_000 };
+		expect(isReadyForPrompt({ ...ready, status: status("working") })).toBe(false);
+		expect(isReadyForPrompt({ ...ready, status: status("blocked") })).toBe(false);
+		expect(isReadyForPrompt({ ...ready, status: status("idle") })).toBe(true);
+		// An agent that probes and is not silent still waits for idle when it has reported nothing.
+		expect(isReadyForPrompt({ ...ready, silentUntilInput: false, status: null })).toBe(false);
+		expect(isReadyForPrompt({ probed: true, status: null, pasteOn: true, quietMilliseconds: 10_000, pasteOnMilliseconds: 60_000 })).toBe(false);
+	});
+
 	test("OpenCode's done, read from its idle after a turn, is ready too", () => {
 		const probed = { probed: true, pasteOn: true, quietMilliseconds: 0, pasteOnMilliseconds: 0 };
 		expect(isReadyForPrompt({ ...probed, status: { ...status("done"), app: "opencode" } })).toBe(true);

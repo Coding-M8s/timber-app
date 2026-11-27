@@ -50,7 +50,7 @@ export function agentProgram(executable: string, realPath?: string | null, chose
 
 /**
  * The agent an executable is, from its last path part (`claude`, `codex`,
- * `grok`, `cursor-agent`, with `.exe` cut on Windows), and only when it can go back to a
+ * `grok`, `cursor-agent`, `qwen`, `pi`, with `.exe` cut on Windows), and only when it can go back to a
  * conversation and the arguments leave room for the app's own (see above).
  * An agent picked in Settings (`chosen`) is used in place of the name; its
  * arguments are read by the same rules. Words are matched exactly, so a
@@ -69,6 +69,8 @@ export function resumableAgent(executable: string, args: readonly string[], real
  * - codex + resume: ["resume", id, ...args]; codex otherwise: args as they are
  * - grok + resume: ["--resume", id, ...args]; grok + fresh: ["--session-id", id, ...args]
  * - cursor + resume: ["--resume", id, ...args]; cursor otherwise: args as they are
+ * - qwen + resume: ["--resume", id, ...args]; qwen + fresh: ["--session-id", id, ...args]
+ * - pi + resume or fresh: ["--session-id", id, ...args] (Pi goes back or creates)
  * - any other agent, or none: args as they are
  */
 export function agentStartArguments(agent: ResumableAgent | null, args: readonly string[], conversation: { resume: string } | { fresh: string } | null): string[] {

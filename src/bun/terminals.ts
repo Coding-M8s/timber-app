@@ -560,10 +560,10 @@ export function sessionEnvironment(environment: Record<string, string | undefine
  * - A session opened again after a restart may bring the name the person
  *   gave it, and an agent the id of its own conversation. An agent of the
  *   registry with a `resume` goes back to it with its own words (Claude
- *   Code's `--resume <id>`, Codex's `resume <id>`), only when the
+ *   Code's `--resume <id>`, Codex's `resume <id>`, Pi's `--session-id <id>`), only when the
  *   conversation is still in the agent's own folder; otherwise the agent
  *   starts fresh and its terminal says so. A fresh agent that takes the id
- *   of a new conversation (Claude Code, Grok Build) gets one, so its
+ *   of a new conversation (Claude Code, Grok Build, Qwen Code, Pi) gets one, so its
  *   conversation is known from the start. The id is read only as a UUID,
  *   and only ever follows a flag the app adds itself (see
  *   ../shared/agent-resume.ts). A command that already picks a
@@ -703,6 +703,13 @@ export function createTerminalSessions(dependencies: TerminalDependencies): Term
 		if (sessions.get(live.session.id) === live) changed(live, { ...live.session, prompt });
 	}
 
+	/** Whether the session's agent probes but reports nothing until its first input (Amp), from its row in the registry. */
+	function silentUntilInput(live: Live): boolean {
+		if (live.program === null) return false;
+		const status = agentById(live.program).status;
+		return status.source === "osc-7501" && "silentUntilInput" in status && status.silentUntilInput === true;
+	}
+
 	/**
 	 * Send a new agent its prompt if it is ready (`isReadyForPrompt`),
 	 * otherwise look again once it may be: after the quiet it needs, or at
@@ -722,7 +729,7 @@ export function createTerminalSessions(dependencies: TerminalDependencies): Term
 		const pasteOnFor = prompt.pasteOnSince === null ? 0 : now - prompt.pasteOnSince;
 		const what = prompt.review ? "review" : "prompt";
 		const tag = prompt.review ? { what: "review" as const } : {};
-		if (isReadyForPrompt({ probed: prompt.probed, status: live.records.root(), pasteOn, quietMilliseconds: quiet, pasteOnMilliseconds: pasteOnFor }, promptQuietMilliseconds, promptBusyMilliseconds)) {
+		if (isReadyForPrompt({ probed: prompt.probed, status: live.records.root(), silentUntilInput: silentUntilInput(live), pasteOn, quietMilliseconds: quiet, pasteOnMilliseconds: pasteOnFor }, promptQuietMilliseconds, promptBusyMilliseconds)) {
 			// A review is pasted with no Enter: it is sent once the paste is written.
 			const sent = deliver(live, prompt.text, !prompt.review, entered => promptChanged(live, entered ? { state: "sent" } : { state: "not-sent", message: promptEndedMessage(live.session.name) }));
 			// A prompt with a line break waits for bracketed paste, until the deadline.
@@ -739,7 +746,7 @@ export function createTerminalSessions(dependencies: TerminalDependencies): Term
 			return;
 		}
 		// An agent that never probed is looked at again once it may have gone quiet, or been on long enough.
-		const waits = prompt.probed || !pasteOn ? [] : [promptQuietMilliseconds - quiet, promptBusyMilliseconds - pasteOnFor].filter(wait => wait > 0);
+		const waits = (prompt.probed && !(silentUntilInput(live) && live.records.root() === null)) || !pasteOn ? [] : [promptQuietMilliseconds - quiet, promptBusyMilliseconds - pasteOnFor].filter(wait => wait > 0);
 		const next = Math.min(left, ...waits);
 		prompt.timer = setTimeout(() => considerPrompt(live), next);
 	}
