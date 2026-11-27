@@ -61,7 +61,8 @@ export interface StartWorkModel {
 	/** Change fields. Ignored once the worktree exists. */
 	edit(change: Partial<StartWorkFields>): void;
 	/** Run `timber new` from the form once, or ask for the setup session once the worktree exists. */
-	run(workflow?: string | null): Promise<ModeRun>;
+	/** `tag` is given to the worktree if Timber creates one. */
+	run(workflow?: string | null, tag?: string): Promise<ModeRun>;
 }
 
 /** `repository` is the path of the primary checkout; `selector` is the issue's whole selector (see `startWorkChoice`). */
@@ -83,14 +84,14 @@ export function createStartWorkModel(store: Pick<AppStore, "newWorktree">, repos
 		edit(change) {
 			if (state.step.kind === "form") update({ fields: { ...state.fields, ...change } });
 		},
-		async run(workflow = null) {
+		async run(workflow = null, tag) {
 			const { step } = state;
 			if (step.kind === "setup") {
 				const label = reportedLabel(step.worktree);
 				return { outcome: { ok: true, toast: `Opened ${label}` }, created: step.worktree, setup: step.worktree, workflow: step.workflow, startedToast: `Setup started in ${label}` };
 			}
 			const request = startWorkRequest(repository, selector, state.fields, state.question, workflow);
-			const result = await store.newWorktree(request);
+			const result = await store.newWorktree(request, tag);
 			const replace = assigneeRefusal(result, request.assign, issue);
 			// Someone else has the issue after all: nothing was created, so ask, with the names Timber gave. The failure stays on screen.
 			if (replace !== null) update({ question: { ...state.question, replace, partial: false } });

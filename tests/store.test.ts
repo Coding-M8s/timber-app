@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { createMockStatusHooks } from "../src/mainview/engine/mock-status-hooks";
 import { createMockSignIns } from "../src/mainview/engine/mock-sign-in";
+import { createMockSidebarTags } from "../src/mainview/engine/mock-sidebar-tags";
+import { DEFAULT_TAGS } from "../src/shared/worktree-tags";
 import { createMockSidebarIcons } from "../src/mainview/engine/mock-sidebar-icons";
 import { createMockThemeFiles } from "../src/mainview/engine/mock-theme-files";
 import { createMockTerminals } from "../src/mainview/engine/mock-terminals";
@@ -86,6 +88,8 @@ function manualEngine(timber: TimberStatus = sampleTimberStatuses.ready) {
 		listRepositoryAgents: async () => ({}),
 		// Icons as the mock acts them out. Their own tests are in sidebar-icons-ui.test.tsx.
 		...createMockSidebarIcons({ knows: () => true }),
+		// Tags as the mock acts them out, with the default tags. Their own tests are in worktree-tags-ui.test.tsx.
+		...(({ forgetWorktree: _w, forgetTarget: _t, keepOnly: _k, ...tags }) => tags)(createMockSidebarTags({ knows: () => true, savedTags: () => DEFAULT_TAGS })),
 		// Status hooks as the mock acts them out, with no agents. Their own tests are in status-hooks-ui.test.tsx.
 		...createMockStatusHooks(() => []),
 		// Sign-in states as the mock acts them out, with no agents. Their own tests are in agent-sign-in.test.tsx.

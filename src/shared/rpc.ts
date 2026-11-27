@@ -22,6 +22,7 @@ import type { CreatePullRequestRequest, HeadSubjectRequest } from "./timber-pr";
 import type { NewWorktreeRequest, OpenInEditorRequest, OpenWorktreeRequest } from "./model";
 import type { Preferences } from "./preferences";
 import type { IconChoice, IconTarget } from "./sidebar-icons";
+import type { HeaderTarget, SetWorktreeTagRequest, TagColor } from "./worktree-tags";
 import type { IssueSearchRequest } from "./issue-search";
 import type { IssueListRequest } from "./issue-lists";
 import type { IssueRequest } from "./issues";
@@ -66,6 +67,9 @@ export type AppRPC = {
 			readRemoteIconSource: { params: { path: string }; response: Answer<"readRemoteIconSource"> };
 			/** Answers only when the file picker closes or the fetch ends, so the caller must not time it out. */
 			setSidebarIcon: { params: { target: IconTarget; choice: IconChoice | null }; response: Answer<"setSidebarIcon"> };
+			listSidebarTags: { params: {}; response: Answer<"listSidebarTags"> };
+			setWorktreeTag: { params: SetWorktreeTagRequest; response: Answer<"setWorktreeTag"> };
+			setHeaderColor: { params: { target: HeaderTarget; color: TagColor | null }; response: Answer<"setHeaderColor"> };
 			loadRepository: { params: { path: string }; response: Answer<"loadRepository"> };
 			listBranches: { params: { repository: string }; response: Answer<"listBranches"> };
 			/** Answers only when Timber and its setup scripts have ended, so the caller must not time it out. */

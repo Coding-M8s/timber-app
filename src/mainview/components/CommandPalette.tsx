@@ -42,6 +42,7 @@ const ICON_PATHS: Record<Exclude<PaletteIcon, "worktree">, ReactNode> = {
 	"chops": <><path d="M8 6h12" /><path d="M8 12h12" /><path d="M8 18h12" /><path d="M4 6h.01" /><path d="M4 12h.01" /><path d="M4 18h.01" /></>,
 	"search": <><circle cx="11" cy="11" r="7" /><path d="M20 20l-3.5-3.5" /></>,
 	"collapse": <><path d="M8 4h11a1 1 0 0 1 1 1v11" /><rect x="4" y="8" width="12" height="12" rx="1" /><path d="M7.5 14h5" /></>,
+	"tag": <><path d="M3 12V4a1 1 0 0 1 1-1h8l9 9-9 9z" /><circle cx="8" cy="8" r="1.5" /></>,
 	"add-repository": <><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /><path d="M12 10v6M9 13h6" /></>,
 };
 

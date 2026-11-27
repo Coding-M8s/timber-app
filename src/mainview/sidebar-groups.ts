@@ -216,6 +216,9 @@ export function chooseFromRepositoryMenu(store: AppStore, repository: string, ch
 		case "icon":
 			store.openDialog({ kind: "sidebar-icon", target: { kind: "repository", path: repository } });
 			return;
+		case "color":
+			void store.setHeaderColor({ kind: "repository", path: repository }, choice.color);
+			return;
 		case "remove":
 			void store.removeRepository(repository);
 			return;

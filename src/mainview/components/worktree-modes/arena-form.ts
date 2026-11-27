@@ -51,7 +51,8 @@ export interface ArenaForm {
 	 * each attempt's agent itself, so the run reports no worktree for the
 	 * dialog to start one in. A create that stopped keeps what Timber reserved.
 	 */
-	run(): Promise<ModeRun>;
+	/** `tag` is given to every attempt Timber creates. */
+	run(tag?: string): Promise<ModeRun>;
 }
 
 /** The request the fields make. The dialog words its command from the same fields, and `run` sends this. */
@@ -104,8 +105,8 @@ export function createArenaForm(
 				...(answer.ok ? { presets: answer.presets, presetsProblem: null } : { presets: [], presetsProblem: answer.message }),
 			});
 		},
-		async run() {
-			const result = await store.newArena(arenaRequest(repository, state));
+		async run(tag) {
+			const result = await store.newArena(arenaRequest(repository, state), tag);
 			if (result.outcome === "created") {
 				return { outcome: { ok: true, toast: describeCreated(result.arena.name, result.arena.attempts.length) }, created: null, setup: null };
 			}

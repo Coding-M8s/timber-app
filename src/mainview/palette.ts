@@ -8,6 +8,7 @@ import { BEING_REMOVED_REASON, DONE_PRIMARY_NOTE } from "./done-format";
 import { fetchUnavailable } from "./fetch-format";
 import { COLLAPSE_FOLDERS_LABEL, collapseUnavailable, filesPanelShortcut } from "./files-panel-format";
 import { worktreeLabel } from "./format";
+import { tagOf, worktreeTagId } from "../shared/worktree-tags";
 import { REBASE_FOLDER_MISSING } from "./rebase-format";
 import { RUN_CHOP_LABEL, runChopShortcut } from "./run-chop-format";
 import { shortcutLetter } from "../shared/shortcuts";
@@ -17,6 +18,10 @@ import type { SidePanelView } from "../shared/layout";
 import { type RowSessionMark, describeRowSessions } from "./terminal-format";
 import { NONE_WAITING, WAITING_LABEL, describeToVisit, waitingShortcut } from "./waiting";
 import { PULLING_REASON, SYNC_ACTION_WORDS, pullInsteadOfRebase, syncMenuEntries } from "./sync-action-format";
+
+/** The palette's entry for choosing the selected worktree's tag (issue 409), and the other words that find it. */
+export const SET_TAG_LABEL = "Set tag...";
+const SET_TAG_KEYWORDS = ["tag", "color", "label", "review", "work"];
 
 /**
  * The command palette without React: what it lists for the state of the app,
@@ -53,7 +58,7 @@ export type PaletteSection = "worktree" | "repository" | "worktrees" | "app";
 /** The picture beside an entry's label. */
 export type PaletteIcon =
 	| "terminal" | "agent" | "rebase" | "done" | "editor" | "new" | "branch" | "arena" | "fetch" | "push" | "clean-up"
-	| "worktree" | "next" | "settings" | "add-repository" | "changes" | "files" | "chops" | "search" | "collapse";
+	| "worktree" | "next" | "settings" | "add-repository" | "changes" | "files" | "chops" | "search" | "collapse" | "tag";
 
 export interface PaletteEntry {
 	/** Unique in the list, so rows have a stable key. */
@@ -226,6 +231,7 @@ function actionEntries(state: AppState, mac: boolean): PaletteEntry[] {
 		for (const agent of state.preferences.agents) add(inWorktree("agent"), `agent:${agent.name}`, `Start ${agent.name}`, "", none, idle, ["agent", "session"]);
 		add(inWorktree("rebase"), "rebase", "Rebase", "", none, idle);
 		add(inWorktree("editor"), "editor", OPEN_IN_EDITOR, "", none, idle, ["code"]);
+		add(inWorktree("tag"), "set-tag", SET_TAG_LABEL, "", none, idle, SET_TAG_KEYWORDS);
 		add(inWorktree("done"), "done", "Done", "", none, idle, ["remove", "finish", "delete"]);
 		if (filesPanelShown(state)) add(inWorktree("collapse"), "collapse-folders", COLLAPSE_FOLDERS_LABEL, "", none, idle, COLLAPSE_KEYWORDS);
 		// The chops last read stay listed, so they can be found and say why they cannot run.
@@ -278,6 +284,8 @@ function actionEntries(state: AppState, mac: boolean): PaletteEntry[] {
 		const editor: EditorAction = describeEditorAction(state.preferences.editor, worktree, running);
 		add(inWorktree("editor"), "editor", OPEN_IN_EDITOR, editor.command === null ? `Opens ${name} in your editor.` : `Opens ${name} in your editor with ${editor.command}.`, editor.available ? null : editor.reason ?? OPENING_IN_EDITOR,
 			{ kind: "editor", repository: repository.path, worktree: worktree.path }, ["code"]);
+		add(inWorktree("tag"), "set-tag", SET_TAG_LABEL, `Chooses the tag of ${name}. It is ${tagOf(state.preferences.tags, worktreeTagId(state.sidebarTags, repository.path, worktree.path)).name} now.`, null,
+			{ kind: "dialog", request: { kind: "set-tag", repository: repository.path, worktree: worktree.id } }, SET_TAG_KEYWORDS);
 		add(inWorktree("done"), "done", "Done", `Opens Done for ${name}, which shows the Timber command before it runs.`, worktree.primary ? DONE_PRIMARY_NOTE : null,
 			{ kind: "dialog", request: { kind: "done-worktree", repository: repository.path, worktree: worktree.id } }, ["remove", "finish", "delete"]);
 		// Only while the tree it closes shows, as its button.

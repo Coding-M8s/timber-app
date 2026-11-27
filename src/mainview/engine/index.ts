@@ -1,5 +1,5 @@
 import type { Engine } from "../../shared/engine";
-import { browserSampleRepositories, createMockEngine, sampleTimberStatuses } from "./mock";
+import { browserSampleRepositories, browserSampleTags, createMockEngine, sampleTimberStatuses } from "./mock";
 import { browserSessionStorage } from "./mock-session-storage";
 
 /**
@@ -21,7 +21,8 @@ export async function createEngine(): Promise<Engine> {
 			: sampleTimberStatuses.ready;
 	// Acted commands take a moment here, so a dialog's running state can be seen.
 	// The open sessions are kept in localStorage, so a reload acts out quitting and opening the app again.
-	const engine = createMockEngine(browserSampleRepositories, timber, { commandMilliseconds: 1200, savedSessions: browserSessionStorage() });
+	// The sidebar starts with worktrees of every tag, the timber header colored, and a colored group, Clients.
+	const engine = createMockEngine(browserSampleRepositories, timber, { commandMilliseconds: 1200, savedSessions: browserSessionStorage(), sidebar: browserSampleTags });
 	// A reload or a closed tab is the quit of the browser build.
 	globalThis.addEventListener("pagehide", () => engine.saveSessionsNow());
 	// The browser console can act out what the main process would do, for example

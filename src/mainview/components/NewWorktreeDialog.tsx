@@ -158,7 +158,10 @@ export function NewWorktreeDialog({ repository, initialMode = "new" }: { reposit
 	const { submission, state } = useSubmission(() => store.closeDialog());
 	const [controller] = useState(() =>
 		createWorktreeDialogController(store, repository.path, submission, openingMode(initialMode, arenasUnavailable(store.getState().arenas[repository.path]))));
-	const { selected, workflows } = useSyncExternalStore(controller.subscribe, controller.getState, controller.getState);
+	const { selected, workflows, tag } = useSyncExternalStore(controller.subscribe, controller.getState, controller.getState);
+	const tags = useAppState().preferences.tags;
+	// One Tag field for every mode, under its Name field, so the choice stays when another mode shows.
+	const tagChoice = { tags, chosen: tag, onPick: controller.pickTag };
 	// Read once when the dialog opens: each read runs Timber, and file watching reads the repository again often.
 	// The controller reads again after a run fails, when the settings may have changed.
 	// The agents are looked for again too, as one may have been installed since the app started, and asked whether
@@ -169,9 +172,9 @@ export function NewWorktreeDialog({ repository, initialMode = "new" }: { reposit
 		controller.readSignIns();
 	}, [controller]);
 	const modes = [
-		useNewBranchMode(repository, submission, workflows),
-		useExistingBranchMode(repository, submission, workflows),
-		useArenaMode(repository, submission, selected === MODE_INDEX.arena),
+		useNewBranchMode(repository, submission, workflows, tagChoice),
+		useExistingBranchMode(repository, submission, workflows, tagChoice),
+		useArenaMode(repository, submission, selected === MODE_INDEX.arena, tagChoice),
 	];
 	const app = useAppState();
 	const { preferences: { agents }, agentLocations, agentSignIns } = app;

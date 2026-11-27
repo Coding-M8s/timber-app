@@ -28,6 +28,8 @@ interface Palette {
 	errorHover: string;
 	/** Merged pull requests: a purple, as the hosts draw them. */
 	merged: string;
+	/** The five tag colors (issue 409), each apart from the status colors. */
+	tags: readonly [string, string, string, string, string];
 	/** The focus ring. The incoming color unless the palette says otherwise. */
 	focus?: string;
 	/** The sixteen ANSI colors, black to bright white. */
@@ -76,7 +78,8 @@ export function diffWordTints(appearance: Appearance, colors: Pick<Record<UiColo
 }
 
 function theme(id: string, name: string, appearance: Appearance, palette: Palette): Theme {
-	const { ansi, focus, ...colors } = palette;
+	const { ansi, focus, tags, ...colors } = palette;
+	const [tag1, tag2, tag3, tag4, tag5] = tags;
 	const terminal = {} as Record<TerminalColor, string>;
 	ANSI_NAMES.forEach((key, index) => {
 		terminal[key] = ansi[index]!;
@@ -89,6 +92,7 @@ function theme(id: string, name: string, appearance: Appearance, palette: Palett
 		ui: {
 			...colors,
 			...FILLS[appearance],
+			tag1, tag2, tag3, tag4, tag5,
 			focus: focus ?? colors.behind,
 			diffAdded: withAlpha(colors.untracked, appearance === "dark" ? 0.12 : 0.14),
 			diffRemoved: withAlpha(colors.error, appearance === "dark" ? 0.12 : 0.1),
@@ -127,6 +131,7 @@ export const DEFAULT_DARK_THEME: Theme = theme("timber-dark", "Timber Dark", "da
 	error: "#f08b80",
 	errorHover: "#f6a399",
 	merged: "#c79bf2",
+	tags: ["#4fc4b8", "#f08fc0", "#8f9cf7", "#b5d86a", "#f0a46a"],
 	ansi: [
 		"#1f1f23", "#f08b80", "#73c991", "#e2c08d", "#6ea8fe", "#c79bf2", "#6ccfd8", "#a1a1aa",
 		"#8a8a94", "#ffa79d", "#93deac", "#f0d4a6", "#94c0ff", "#dab8f7", "#93e2e9", "#ececef",
@@ -151,6 +156,7 @@ export const DEFAULT_LIGHT_THEME: Theme = theme("timber-light", "Timber Light", 
 	error: "#c62828",
 	errorHover: "#a51f1f",
 	merged: "#9333ea",
+	tags: ["#0f8077", "#c0357c", "#4b56cf", "#557d10", "#b8561a"],
 	ansi: [
 		"#18181b", "#c62828", "#15803d", "#8a6100", "#1d4ed8", "#9333ea", "#0e7490", "#71717a",
 		"#52525b", "#dc2626", "#16a34a", "#a16207", "#2563eb", "#a855f7", "#0891b2", "#3f3f46",
@@ -177,6 +183,8 @@ const SOLARIZED_DARK = theme("solarized-dark", "Solarized Dark", "dark", {
 	errorHover: "#f07c79",
 	// Solarized violet is too faint on the dark ground; a lighter shade of it.
 	merged: "#8d91d6",
+	// Bright magenta is Solarized violet, too faint here; a lighter magenta is used, and green and yellow shades apart from the status colors.
+	tags: [SOLARIZED.cyan, "#e0559a", SOLARIZED.blue, "#a2b32a", "#d9a21b"],
 	ansi: [
 		"#073642", SOLARIZED.red, SOLARIZED.green, SOLARIZED.yellow, SOLARIZED.blue, SOLARIZED.magenta, SOLARIZED.cyan, "#eee8d5",
 		"#586e75", SOLARIZED.orange, SOLARIZED.green, SOLARIZED.yellow, SOLARIZED.blue, SOLARIZED.violet, SOLARIZED.cyan, "#fdf6e3",
@@ -200,6 +208,8 @@ const SOLARIZED_LIGHT = theme("solarized-light", "Solarized Light", "light", {
 	error: "#c42b28",
 	errorHover: "#a82422",
 	merged: SOLARIZED.violet,
+	// Solarized's cyan, green, and orange are too faint on the light ground; darker shades of them, apart from its status colors.
+	tags: ["#1a7a72", SOLARIZED.magenta, "#5b5fc0", "#4d7a12", "#a8521a"],
 	ansi: [
 		"#073642", SOLARIZED.red, SOLARIZED.green, SOLARIZED.yellow, SOLARIZED.blue, SOLARIZED.magenta, SOLARIZED.cyan, "#93a1a1",
 		"#586e75", SOLARIZED.orange, SOLARIZED.green, SOLARIZED.yellow, SOLARIZED.blue, SOLARIZED.violet, SOLARIZED.cyan, "#002b36",
@@ -223,6 +233,8 @@ const NORD = theme("nord", "Nord", "dark", {
 	error: "#d97b84",
 	errorHover: "#e3949b",
 	merged: "#b48ead",
+	// Frost, then shades of the aurora, apart from the status colors.
+	tags: ["#8fbcbb", "#d39bc6", "#81a1c1", "#b9d1a0", "#e8a98c"],
 	ansi: [
 		"#3b4252", "#bf616a", "#a3be8c", "#ebcb8b", "#81a1c1", "#b48ead", "#88c0d0", "#e5e9f0",
 		"#616e88", "#bf616a", "#a3be8c", "#ebcb8b", "#81a1c1", "#b48ead", "#8fbcbb", "#eceff4",
@@ -246,6 +258,8 @@ const GRUVBOX_DARK = theme("gruvbox-dark", "Gruvbox Dark", "dark", {
 	error: "#fb4934",
 	errorHover: "#fc6d5c",
 	merged: "#d3869b",
+	// Aqua, then shades of the palette's pink, blue, green, and orange, apart from the status colors.
+	tags: ["#8ec07c", "#e39cb0", "#76a3c4", "#c7c94a", "#e8a86a"],
 	ansi: [
 		"#282828", "#cc241d", "#98971a", "#d79921", "#458588", "#b16286", "#689d6a", "#a89984",
 		"#928374", "#fb4934", "#b8bb26", "#fabd2f", "#83a598", "#d3869b", "#8ec07c", "#ebdbb2",
@@ -269,6 +283,8 @@ const CATPPUCCIN_MOCHA = theme("catppuccin-mocha", "Catppuccin Mocha", "dark", {
 	error: "#f38ba8",
 	errorHover: "#f5a3ba",
 	merged: "#cba6f7",
+	// Teal, pink, lavender, sky, and flamingo, apart from the status colors.
+	tags: ["#94e2d5", "#f5c2e7", "#b4befe", "#89dceb", "#f2cdcd"],
 	ansi: [
 		"#45475a", "#f38ba8", "#a6e3a1", "#f9e2af", "#89b4fa", "#f5c2e7", "#94e2d5", "#bac2de",
 		"#585b70", "#f38ba8", "#a6e3a1", "#f9e2af", "#89b4fa", "#f5c2e7", "#94e2d5", "#a6adc8",

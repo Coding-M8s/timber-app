@@ -225,8 +225,8 @@ describe("the issue on screen", () => {
 	test("the row's tooltip shows the key and status", async () => {
 		const { store } = await startedStore();
 		const markup = selecting(store, MAC);
-		expect(markup).toContain(`title="${MAC} (Base origin/main) (TIM-88 · In Review)"`);
-		expect(markup).toContain(`title="${LOOKUP} (Base origin/main) (#41 · Open)"`);
+		expect(markup).toContain(`title="${MAC} (Base origin/main) (TIM-88 · In Review). Tag: Work"`);
+		expect(markup).toContain(`title="${LOOKUP} (Base origin/main) (#41 · Open). Tag: Work"`);
 	});
 
 	test("the link opens the saved address in the browser", async () => {

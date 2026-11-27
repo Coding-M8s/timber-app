@@ -6,6 +6,7 @@ import { isAgentName } from "./repository-agents";
 import { type Preferences, readPreferences, writePreferences } from "./preferences";
 import { type SidebarIcons, hasIcons, readIcons, writeIcons } from "./sidebar-icons";
 import { type SavedWindow, readSavedWindow } from "./window-frame";
+import { type TagColor, isTagColor, readWorktreeTags } from "./worktree-tags";
 
 /**
  * What the app remembers between runs. Parsing and formatting are pure; the
@@ -28,6 +29,14 @@ export interface SavedRepository {
 	 * written before repositories could name one.
 	 */
 	agent?: string;
+	/**
+	 * The tags of its worktrees other than Work (issue 409), by the worktree's
+	 * path as Git registered it, each a tag's id from the preferences. Absent
+	 * while every worktree is Work, and in older files.
+	 */
+	worktreeTags?: Record<string, string>;
+	/** The color of its header in the sidebar, one of the theme's tag colors. Absent for none. */
+	color?: TagColor;
 }
 
 export interface Settings {
@@ -121,10 +130,14 @@ export function parseSettings(text: string): Settings | null {
 		// A file edited by hand may repeat a repository. Keep the first.
 		if (!repositories.some(known => known.path === repository.path || known.commonDir === repository.commonDir)) {
 			// A group that names none of the groups read is dropped, never the repository.
-			const { group, agent } = entry as Record<string, unknown>;
+			const { group, agent, worktreeTags, color } = entry as Record<string, unknown>;
 			if (typeof group === "string" && groups.some(known => known.id === group)) repository.group = group;
 			// One that is no agent's name is dropped too. One that names no saved agent is kept: it starts nothing, rather than another agent.
 			if (isAgentName(agent)) repository.agent = agent;
+			// Tags and a color that cannot be read cost only themselves.
+			const tags = readWorktreeTags(worktreeTags);
+			if (Object.keys(tags).length > 0) repository.worktreeTags = tags;
+			if (isTagColor(color)) repository.color = color;
 			repositories.push(repository);
 		}
 	}
@@ -149,8 +162,16 @@ export function parseSettings(text: string): Settings | null {
 
 /** The text of a settings file, readable and stable enough to edit by hand. */
 export function serializeSettings(settings: Settings): string {
-	const repositories = settings.repositories.map(({ path, commonDir, group, agent }) => ({ path, commonDir, ...(group === undefined ? {} : { group }), ...(agent === undefined ? {} : { agent }) }));
-	const groups = settings.groups && settings.groups.length > 0 ? settings.groups.map(({ id, name, parent }) => ({ id, name, ...(parent === undefined ? {} : { parent }) })) : null;
+	const repositories = settings.repositories.map(({ path, commonDir, group, agent, worktreeTags, color }) => ({
+		path,
+		commonDir,
+		...(group === undefined ? {} : { group }),
+		...(agent === undefined ? {} : { agent }),
+		// Written only once a worktree has a tag other than Work, or the header a color, so an older file stays as it was.
+		...(worktreeTags && Object.keys(worktreeTags).length > 0 ? { worktreeTags: readWorktreeTags(worktreeTags) } : {}),
+		...(isTagColor(color) ? { color } : {}),
+	}));
+	const groups = settings.groups && settings.groups.length > 0 ? settings.groups.map(({ id, name, parent, color }) => ({ id, name, ...(parent === undefined ? {} : { parent }), ...(isTagColor(color) ? { color } : {}) })) : null;
 	const layout = settings.layout && {
 		sidebarWidth: settings.layout.sidebarWidth,
 		collapsed: [...settings.layout.collapsed],

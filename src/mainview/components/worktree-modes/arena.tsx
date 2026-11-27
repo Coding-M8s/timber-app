@@ -1,3 +1,4 @@
+import { type TagChoice, TagField } from "../TagField";
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { type ArenaCreation, MAX_ARENA_RUNS, newArenaProblem } from "../../../shared/arenas";
 import type { Repository } from "../../../shared/model";
@@ -30,7 +31,7 @@ function Reserved({ arena }: { arena: ArenaCreation }) {
  * the same fields and command as the New arena dialog had. `unavailable` says
  * why the Timber found cannot make arenas, or is null when it can.
  */
-export function arenaMode(form: Pick<ArenaForm, "setName" | "setTask" | "setGroups" | "setBase" | "run">, state: ArenaFormState, repository: string, unavailable: string | null = null): WorktreeDialogMode {
+export function arenaMode(form: Pick<ArenaForm, "setName" | "setTask" | "setGroups" | "setBase" | "run">, state: ArenaFormState, repository: string, unavailable: string | null = null, tag: TagChoice | null = null): WorktreeDialogMode {
 	const { name, task, groups, base, tools, toolsProblem, presets, presetsProblem, reserved } = state;
 	const request = arenaRequest(repository, state);
 	const problem = newArenaProblem(request);
@@ -48,6 +49,8 @@ export function arenaMode(form: Pick<ArenaForm, "setName" | "setTask" | "setGrou
 				<input className="field-input" name="name" value={name} autoComplete="off" spellCheck={false} autoFocus onChange={event => form.setName(event.target.value)} />
 				<span className="field-hint">Lowercase letters, digits, - and _, or a ticket key such as ENG-12. Timber decides the arena's name from it.</span>
 			</label>
+			{/* Every attempt takes it. */}
+			{tag && <TagField tags={tag.tags} chosen={tag.chosen} disabled={false} onPick={tag.onPick} />}
 			<label className="field">
 				<span className="field-label">Task</span>
 				<textarea className="field-input arena-task" name="task" rows={5} value={task} onChange={event => form.setTask(event.target.value)} />
@@ -117,7 +120,7 @@ export function arenaMode(form: Pick<ArenaForm, "setName" | "setTask" | "setGrou
 		setupStart: "never",
 		worktree: null,
 		workflow: null,
-		run: () => form.run(),
+		run: () => form.run(tag?.chosen),
 		ownFollowUps: [{ note: AGENTS_FOLLOW_UP, command: LAUNCH_COMMAND }],
 		failureNote: reserved ? <Reserved arena={reserved} /> : undefined,
 		unavailable,
@@ -130,7 +133,7 @@ export function arenaMode(form: Pick<ArenaForm, "setName" | "setTask" | "setGrou
  * mode is on screen: the tools and presets are read only then, since each read runs
  * Timber and most dialogs never show this mode.
  */
-export function useArenaMode(repository: Repository, submission: Submission, active: boolean): WorktreeDialogMode {
+export function useArenaMode(repository: Repository, submission: Submission, active: boolean, tag: TagChoice | null = null): WorktreeDialogMode {
 	const store = useStore();
 	const unavailable = arenasUnavailable(useAppState().arenas[repository.path]);
 	const [form] = useState(() => createArenaForm(store, repository.path, submission));
@@ -138,5 +141,5 @@ export function useArenaMode(repository: Repository, submission: Submission, act
 	useEffect(() => {
 		if (active && unavailable === null) void form.readChoices();
 	}, [form, active, unavailable]);
-	return arenaMode(form, state, repository.path, unavailable);
+	return arenaMode(form, state, repository.path, unavailable, tag);
 }

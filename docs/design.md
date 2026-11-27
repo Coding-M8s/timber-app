@@ -360,6 +360,30 @@ change them here first when they change.
   Linear are not offered: their images need a login only Timber holds.
 - Icons are kept in the app's settings, never in the repository. Removing a
   repository or deleting a group drops its icon.
+- Worktrees have tags (issue 409), so the sidebar tells kinds of worktrees
+  apart, such as the person's own work and pull requests they review. A tag
+  is a name and one of the theme's five tag colors. Work, in the first tag
+  color, is the default: a worktree with no other tag, such as one made with
+  `timber new` in a terminal or by a bot, is Work. Review is in the second.
+  More are made in Settings, Tags. A tagged row is washed in its tag's color
+  (see Look); the tag's name is in the row's tooltip ("Tag: Review") and at
+  the end of its description, so it is never told by color alone, and the
+  wash has no shape or word of its own, so it never reads as a status.
+- The row's menu (a right-click, Shift+F10, or the context menu key) has
+  "Tag" before Done. It opens the tags beside the menu, each with its color
+  and the current one checked, by a click, Enter, Space, Right, or the
+  pointer resting on it; in there Left or Escape goes back to Tag. Choosing
+  one sets it at once, with no dialog. The palette's "Set tag..." does the
+  same for the selected worktree in a small dialog.
+- A repository's menu and a group's menu have "Color", which opens the five
+  tag colors, named "Color 1" to "Color 5", and "No color". Headers have no
+  tags and no default: a header has no color until one is picked, and its
+  color colors only the header; each worktree keeps its own tag.
+- Tags are kept in the app's settings, never in Timber's metadata: the list
+  of tags in the preferences, a worktree's tag beside its saved repository,
+  by the worktree's path, and a header's color beside its saved repository
+  or group. A worktree's tag goes once a listing of its repository no longer
+  names it, so a worktree made later at the same path is Work again.
 - The app fetches every repository in the background, on an interval from
   Settings that can be turned off. A failed fetch, such as while offline or
   without stored credentials, shows a quiet grey word beside the
@@ -383,6 +407,13 @@ change them here first when they change.
   sidebar it wraps after its comma instead of being cut short. A worktree
   level with its base, with no saved base, or whose base Timber cannot use
   has no flag, and neither does one whose commits Git could not count.
+- The New worktree dialog, in every mode, Start work, and Check out PR have
+  a Tag field: each tag with its color, one chosen. In New worktree and
+  Start work it sits under the Name field (the branch, or the arena's name)
+  and starts on Work, and the choice stays when another mode shows. Check
+  out PR starts on Review while that tag exists. Only a worktree the run
+  creates takes it, every attempt of an arena included, even when the run
+  then fails; one that was there already keeps its own tag.
 - A row is its button, which holds the first line (the name and the branch
   state), and its second line beside it, so the pull request's number can be
   a button of its own. A click elsewhere on the second line selects the
@@ -1596,6 +1627,14 @@ logins. The app never reads a tracker login and never signs in.
   with a number, or the branch when it has no key). It is saved with the section's Save and names only sessions opened
   after it; open sessions keep their names, and any session can still be
   renamed.
+- **Tags:** a Settings section listing the tags, Work first, each with its
+  five tag colors to pick from, its name, and Remove. "Add tag" adds one
+  with no name yet and the color fewest tags have, up to 20. Work is marked
+  Default and has no Remove, since it is the default; it can be renamed and
+  recolored. A name is one line of at most 40 characters, and two tags
+  cannot share one, ignoring case; a name that cannot be saved is said under
+  it. Removing a tag says its worktrees go back to Work, which happens when
+  the section is saved.
 - **Theme:** a Settings section with a card for each theme, a small
   picture of the app drawn in it. Choosing one shows it at once; Close
   without Save goes back to the saved one. Below the cards, "Your themes"
@@ -1642,6 +1681,19 @@ request, and for a crashed agent, amber for rewritten state, and purple for a
 merged pull request. The only colors not from a theme are inside two agents'
 marks, which are part of them: Claude's own orange in its spark, and the
 gradient of Gemini's spark.
+
+Tag colors are the one exception to color as meaning: they tell kinds of
+worktrees apart and carry no status. Each theme has five, `--tag-1` to
+`--tag-5`, none of them one of its status colors. A worktree's row is
+washed in its tag's color at 7% opacity, drawn between the row's own fill
+and its words, so the hover and selected tints still deepen it and the focus
+ring goes around it as before; a colored repository or group header takes
+the same wash in place of its quiet surface. The contrast check checks
+every text and meaning color over each tag color's wash on the sidebar, so
+the wash is as strong as it can be while faint text keeps 4.5:1 in every
+built-in theme. A theme file saved before tag colors takes the built-in
+theme's of its appearance. The wash was picked over a stripe down the
+row's edge in an A/B test of real builds (issue 409).
 
 Every color is a theme's. Timber Dark is the look above and the default;
 Timber Light and a few well known palettes come with the app. A theme keeps

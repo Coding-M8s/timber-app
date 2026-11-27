@@ -4,7 +4,7 @@
  * are pure. See docs/architecture.md, "Themes".
  */
 import { BUILT_IN_THEMES, DEFAULT_DARK_THEME, DEFAULT_LIGHT_THEME, diffWordTints } from "./builtin-themes";
-import { contrastRatio, formatColor, over, parseColor, readColor } from "./color";
+import { contrastRatio, formatColor, over, parseColor, readColor, withAlpha } from "./color";
 
 /**
  * The id of the style element that holds the theme on the page. The main
@@ -58,6 +58,16 @@ export const UI_COLOR_PROPERTIES = {
 	errorHover: "--error-hover",
 	/** Merged pull requests. */
 	merged: "--merged",
+	/**
+	 * The five tag colors (issue 409): what a worktree's tag, and a sidebar
+	 * header's color, are drawn in. They tell worktrees apart and carry no
+	 * status.
+	 */
+	tag1: "--tag-1",
+	tag2: "--tag-2",
+	tag3: "--tag-3",
+	tag4: "--tag-4",
+	tag5: "--tag-5",
 	focus: "--focus",
 	diffAdded: "--diff-added",
 	diffRemoved: "--diff-removed",
@@ -146,6 +156,8 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 /** The colors a theme may leave out: they follow from its other colors, as in a theme saved before they were added. */
 const DERIVED_UI_COLORS = ["diffAddedWord", "diffRemovedWord", "merged"] as const satisfies readonly UiColor[];
+/** The tag colors, in order. A theme saved before they existed takes the built-in theme's of its appearance. */
+export const TAG_COLORS = ["tag1", "tag2", "tag3", "tag4", "tag5"] as const satisfies readonly UiColor[];
 
 /** The longest name or id a theme can have. */
 const MAX_NAME_LENGTH = 80;
@@ -181,6 +193,10 @@ export function readTheme(value: unknown): { theme: Theme; replaced: string[] } 
 			const color = readColor(given[key]);
 			// A color a later version added, left out, comes from the theme's own colors, so an older theme still reads whole.
 			if (given[key] === undefined && (DERIVED_UI_COLORS as readonly string[]).includes(key)) continue;
+			if (given[key] === undefined && (TAG_COLORS as readonly string[]).includes(key)) {
+				colors[key] = defaults[key];
+				continue;
+			}
 			if (color === undefined) replaced.push(`${part}.${key}`);
 			colors[key] = color ?? defaults[key];
 		}
@@ -310,9 +326,17 @@ export interface ContrastWarning {
 }
 
 const TEXT_COLORS: readonly UiColor[] = ["text", "text2", "text3"];
-const MEANING_COLORS: readonly UiColor[] = ["behind", "ahead", "modified", "untracked", "error", "merged", "focus"];
+const MEANING_COLORS: readonly UiColor[] = ["behind", "ahead", "modified", "untracked", "error", "merged", ...TAG_COLORS, "focus"];
 /** The fill of a text field is also the tint of a repository's header row in the sidebar, drawn over bgApp. */
 const SURFACES: readonly UiColor[] = ["bgApp", "bgMain", "bgPane", "bgRaised", "fillField"];
+
+/**
+ * How strongly a tag color washes a worktree row, and a colored header, in
+ * the sidebar (issue 409): the opacity of the tag color over the sidebar's
+ * ground. The stylesheet draws it at this opacity, and the contrast check
+ * checks every word over it.
+ */
+export const TAG_WASH_OPACITY = 0.07;
 
 /** Each tint of the words that changed, with the tint of the line it is drawn on. */
 const WORD_TINTS = [["diffAddedWord", "diffAdded"], ["diffRemovedWord", "diffRemoved"]] as const satisfies readonly (readonly [UiColor, UiColor])[];
@@ -339,6 +363,12 @@ export function contrastWarnings(theme: Theme, minimums: { text: number; meaning
 	for (const surface of SURFACES) {
 		for (const color of TEXT_COLORS) check(color, theme.ui[color], surface, theme.ui[surface], minimums.text);
 		for (const color of MEANING_COLORS) check(color, theme.ui[color], surface, theme.ui[surface], minimums.meaning);
+	}
+	// A tagged row, and a colored header, is the tag color washed over the sidebar.
+	for (const tag of TAG_COLORS) {
+		const ground = layered([withAlpha(theme.ui[tag], TAG_WASH_OPACITY), theme.ui.bgApp]);
+		for (const color of TEXT_COLORS) check(color, theme.ui[color], tag, ground, minimums.text);
+		for (const color of MEANING_COLORS) if (!(TAG_COLORS as readonly UiColor[]).includes(color)) check(color, theme.ui[color], tag, ground, minimums.meaning);
 	}
 	check("terminal.foreground", theme.terminal.foreground, "terminal.background", theme.terminal.background, minimums.text);
 	// A changed word's tint is drawn over its line's tint, over the diff's pane.

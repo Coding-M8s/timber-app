@@ -82,6 +82,9 @@ export function createDesktopEngine(): Engine {
 		readRemoteIconSource: path => rpc.request.readRemoteIconSource({ path }),
 		// The file picker stays open for as long as the person likes.
 		setSidebarIcon: (target, choice) => rpc.request.setSidebarIcon({ target, choice }, { maxRequestTime: Infinity }),
+		listSidebarTags: () => rpc.request.listSidebarTags({}),
+		setWorktreeTag: request => rpc.request.setWorktreeTag(request),
+		setHeaderColor: (target, color) => rpc.request.setHeaderColor({ target, color }),
 		loadRepository: path => rpc.request.loadRepository({ path }),
 		listBranches: repository => rpc.request.listBranches({ repository }),
 		// Setup scripts take as long as they take.

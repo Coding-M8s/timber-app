@@ -4,7 +4,7 @@
  */
 import { formatColor, parseColor, readColor } from "../shared/color";
 import { copyName, nameIsFree, newThemeId } from "../shared/custom-themes";
-import { type Appearance, type ContrastWarning, type TerminalColor, type Theme, type ThemeChoice, type UiColor, contrastWarnings, defaultTheme, findTheme, sameTheme } from "../shared/theme";
+import { type Appearance, type ContrastWarning, type TerminalColor, type Theme, type ThemeChoice, type UiColor, TAG_COLORS, contrastWarnings, defaultTheme, findTheme, sameTheme } from "../shared/theme";
 
 export const THEME_MODE_LABELS: Record<ThemeChoice["mode"], string> = {
 	fixed: "One theme",
@@ -54,6 +54,11 @@ export const UI_COLOR_LABELS: Record<UiColor, string> = {
 	error: "Errors and destructive actions",
 	errorHover: "Destructive button under the pointer",
 	merged: "Merged pull requests",
+	tag1: "Tag color 1",
+	tag2: "Tag color 2",
+	tag3: "Tag color 3",
+	tag4: "Tag color 4",
+	tag5: "Tag color 5",
 	focus: "Focus ring",
 	diffAdded: "Added lines",
 	diffRemoved: "Removed lines",
@@ -97,6 +102,7 @@ export const COLOR_GROUPS: readonly { title: string; part: "ui" | "terminal"; ke
 	{ title: "Surfaces", part: "ui", keys: ["bgApp", "bgMain", "bgPane", "bgRaised"] },
 	{ title: "Text", part: "ui", keys: ["text", "text2", "text3"] },
 	{ title: "Meaning", part: "ui", keys: ["behind", "ahead", "modified", "untracked", "error", "merged", "focus"] },
+	{ title: "Tags", part: "ui", keys: ["tag1", "tag2", "tag3", "tag4", "tag5"] },
 	{ title: "Lines and fills", part: "ui", keys: ["line", "lineRaised", "fillField", "fillHover", "fillSelected", "fillStrong", "primaryHover", "errorHover"] },
 	{ title: "Diffs", part: "ui", keys: ["diffAdded", "diffRemoved", "diffAddedWord", "diffRemovedWord"] },
 	{ title: "Shadows", part: "ui", keys: ["shadow", "shadowStrong", "scrim"] },
@@ -196,7 +202,9 @@ export function pickedColor(current: string, picked: string): string {
 /** What a contrast warning says, such as "Faint text on Sunken panes: 3.21:1, needs 4.5:1". */
 export function describeWarning(warning: ContrastWarning): string {
 	const label = (key: string) => key.startsWith("terminal.") ? `Terminal ${TERMINAL_COLOR_LABELS[key.slice(9) as TerminalColor].toLowerCase()}` : UI_COLOR_LABELS[key as UiColor];
-	return `${label(warning.color)} on ${label(warning.on).toLowerCase()}: ${warning.ratio}:1, needs ${warning.minimum}:1`;
+	// A tag color as the ground is a sidebar row washed with it.
+	const on = (TAG_COLORS as readonly string[]).includes(warning.on) ? `a row tinted in ${label(warning.on).toLowerCase()}` : label(warning.on).toLowerCase();
+	return `${label(warning.color)} on ${on}: ${warning.ratio}:1, needs ${warning.minimum}:1`;
 }
 
 /** The choice with this theme in use: as the one theme, or in the system's slot of its appearance. */

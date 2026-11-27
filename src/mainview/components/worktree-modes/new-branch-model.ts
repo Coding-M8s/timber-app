@@ -142,7 +142,8 @@ export interface NewBranchModel {
 	 * which runs nothing here. Either way a run that worked reports the
 	 * worktree as created, because this mode made it.
 	 */
-	run(workflow?: string | null, tracker?: IssueTracker | null): Promise<ModeRun>;
+	/** `tag` is given to the worktree if Timber creates one (see `AppStore.newWorktree`). */
+	run(workflow?: string | null, tracker?: IssueTracker | null, tag?: string): Promise<ModeRun>;
 }
 
 type Actions = Pick<AppStore, "newWorktree" | "readIssueTrackers">;
@@ -175,13 +176,13 @@ export function createNewBranchModel(store: Actions, repository: string): NewBra
 			const trackers = await store.readIssueTrackers(repository);
 			if (read === latestRead) update({ trackers });
 		},
-		async run(workflow = null, tracker = null) {
+		async run(workflow = null, tracker = null, tag) {
 			const { step } = state;
 			if (step.kind === "setup") {
 				const label = reportedLabel(step.worktree);
 				return { outcome: { ok: true, toast: `Opened ${label}` }, created: step.worktree, setup: step.worktree, workflow: step.workflow, startedToast: `Setup started in ${label}` };
 			}
-			const result = await store.newWorktree(newWorktreeRequest(repository, state.fields, workflow, tracker));
+			const result = await store.newWorktree(newWorktreeRequest(repository, state.fields, workflow, tracker), tag);
 			const { run, kept } = afterNew(result);
 			if (kept) update({ step: { kind: "setup", worktree: kept, workflow } });
 			return { ...run, workflow };

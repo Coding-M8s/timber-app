@@ -55,7 +55,8 @@ export interface ExistingBranchForm {
 	 * it again. A failure that kept a worktree keeps the workflow with it (see
 	 * `KeptWorktree`).
 	 */
-	run(workflow?: string | null): Promise<ModeRun>;
+	/** `tag` is given to the worktree only if Timber creates one: one that was there keeps its own. */
+	run(workflow?: string | null, tag?: string): Promise<ModeRun>;
 }
 
 /** Whether two reports name the same worktree: by identity, or by the registered path. */
@@ -126,12 +127,12 @@ export function createExistingBranchForm(
 		setSetup: setup => edit({ setup }),
 		setWorkflow: workflow => edit({ workflow }),
 		readBranches,
-		async run(workflow = null) {
+		async run(workflow = null, tag) {
 			// An edit puts `kept` away, so it is set here only while the fields still name that worktree.
 			const before = state.kept;
 			const editsBefore = edits;
 			update({ kept: null });
-			const result = await store.openWorktree(openRequest(repository, state, workflow));
+			const result = await store.openWorktree(openRequest(repository, state, workflow), tag);
 			// A run that names no worktree tells nothing new about the kept one. While the fields still name it, it stays kept.
 			const keepBefore = () => {
 				if (before !== null && edits === editsBefore) update({ kept: before });

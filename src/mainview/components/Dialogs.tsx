@@ -17,6 +17,7 @@ import { SetBaseDialog } from "./SetBaseDialog";
 import { SendPromptDialog } from "./SendPromptDialog";
 import { SettingsDialog } from "./SettingsDialog";
 import { SidebarIconDialog } from "./SidebarIconDialog";
+import { SetTagDialog } from "./TagField";
 import { StartWorkDialog } from "./StartWorkDialog";
 import { SetupWizardDialog } from "./SetupWizardDialog";
 import { SyncActionDialog } from "./SyncActionDialog";
@@ -58,6 +59,9 @@ export function Dialogs() {
 		case "sidebar-icon":
 			// A key per repository or group, so another one starts from nothing. It closes itself when that leaves the list.
 			return <SidebarIconDialog key={JSON.stringify(dialog.target)} target={dialog.target} />;
+		case "set-tag":
+			// A key per worktree, so another one starts from nothing. It closes itself when the worktree leaves the list.
+			return <SetTagDialog key={`${dialog.repository}\n${dialog.worktree}`} repository={dialog.repository} worktree={dialog.worktree} />;
 		case "run-chop":
 			return <RunChopDialog />;
 		case "restore-backup":

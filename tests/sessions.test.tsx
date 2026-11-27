@@ -249,7 +249,7 @@ describe("several sessions in one worktree", () => {
 		const { store, one, two, three } = await withThreeSessions();
 		const row = (markup: string) => markup.slice(markup.indexOf(`title="${FEATURE} (`), markup.indexOf("</li>", markup.indexOf(`title="${FEATURE} (`)));
 		expect(row(render(store))).toContain('<span class="row-sessions" aria-hidden="true"><span class="row-shells" title="3 sessions running"><span class="row-sessions-dot"></span>3</span></span>');
-		expect(row(render(store))).toContain("3 sessions running.</span>");
+		expect(row(render(store))).toContain("3 sessions running. Tag: Work.</span>");
 		await store.closeTerminal(one.id);
 		await store.closeTerminal(two.id);
 		expect(row(render(store))).toContain('title="1 session running"');

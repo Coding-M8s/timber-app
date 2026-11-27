@@ -6,6 +6,7 @@ import { SIGN_IN_FRESH_MILLISECONDS } from "../../../shared/agent-sign-in";
 import { type AgentPick, type AgentPlan, defaultAgent, plannedAgent, runAndStart, startingAgent } from "./agent-choice";
 import type { WorktreeDialogMode } from "./mode";
 import type { WorkflowOptions } from "./workflow-choice";
+import { WORK_TAG_ID } from "../../../shared/worktree-tags";
 
 /**
  * What the New worktree dialog does between its modes and its one
@@ -23,6 +24,8 @@ export interface WorktreeDialogChoices {
 	pick: AgentPick;
 	/** The repository's workflows for the modes' Workflow fields: undefined until read. */
 	workflows: WorkflowOptions;
+	/** The id of the tag every mode's Tag field shows, Work to start with (issue 409). */
+	tag: string;
 }
 
 export interface WorktreeDialogController {
@@ -33,6 +36,8 @@ export interface WorktreeDialogController {
 	select(index: number): void;
 	/** Pick an agent by name, or null for None. */
 	pickAgent(pick: string | null): void;
+	/** Pick the tag the worktree gets, by id. Kept when another mode shows. */
+	pickTag(tag: string): void;
 	/** Read the repository's workflows. Only the latest read counts. Never throws. */
 	readWorkflows(): Promise<void>;
 	/**
@@ -74,7 +79,7 @@ export function createWorktreeDialogController(
 	/** The mode to start on, by position. The first unless given. */
 	selected = 0,
 ): WorktreeDialogController {
-	let state: WorktreeDialogChoices = { selected, pick: undefined, workflows: undefined };
+	let state: WorktreeDialogChoices = { selected, pick: undefined, workflows: undefined, tag: WORK_TAG_ID };
 	const listeners = new Set<() => void>();
 	let latestRead = 0;
 
@@ -115,6 +120,7 @@ export function createWorktreeDialogController(
 			submission.clearFailure();
 		},
 		pickAgent: pick => update({ pick }),
+		pickTag: tag => update({ tag }),
 		readWorkflows,
 		locateAgents,
 		readSignIns: () => void store.loadAgentSignIns(SIGN_IN_FRESH_MILLISECONDS),

@@ -1,4 +1,4 @@
-import type { ButtonHTMLAttributes, MouseEvent, ReactNode, Ref } from "react";
+import type { ButtonHTMLAttributes, CSSProperties, MouseEvent, ReactNode, Ref } from "react";
 import { describeBackupsProblem } from "../backup-format";
 import { describeFetchAction, describeFetchMarker, fetchUnavailable } from "../fetch-format";
 import { describeRepositoryPullRequestProblem } from "../pull-request-format";
@@ -21,7 +21,8 @@ import { WorktreeRow } from "./WorktreeRow";
 import { SidebarIconView } from "./SidebarIcon";
 import { repositoryIcon } from "../../shared/sidebar-icons";
 import { IssuesRow } from "./IssuesBoard";
-import { WORKTREE_MENU_SHORTCUTS, worktreeMenuChoice } from "../worktree-menu-format";
+import { WORKTREE_MENU_SHORTCUTS, tagOfMenuItem, worktreeMenuChoice } from "../worktree-menu-format";
+import { headerColor, tagColorVariable, tagOf, worktreeTagId } from "../../shared/worktree-tags";
 import { ARENA_BETA_NOTE, BETA, describeArenaHeader, groupArenaRows } from "../arena-format";
 
 export interface RepositorySectionProps {
@@ -90,6 +91,7 @@ export function RepositorySection({ state, store, repository, matches, open, que
 	// A fetch that runs still shows as one; otherwise a repository whose branches track no remote says why there is nothing to fetch.
 	const nothingToFetch = fetching ? null : fetchUnavailable(repository);
 	const fetchLabel = nothingToFetch ?? describeFetchAction(repository.name, fetching ? { repository: repository.path, fetching: true, lastFetched: null, failure: null } : fetch, now);
+	const color = headerColor(state.sidebarTags, { kind: "repository", path: repository.path });
 	return (
 		<section
 			ref={sectionRef}
@@ -97,7 +99,12 @@ export function RepositorySection({ state, store, repository, matches, open, que
 			aria-label={repository.name}
 			data-repository={repository.path}
 		>
-			<div className={repository.available ? "group-head" : "group-head unavailable"} onContextMenu={onHeadContextMenu}>
+			<div
+				className={[repository.available ? "group-head" : "group-head unavailable", color !== null ? "colored" : ""].filter(Boolean).join(" ")}
+				// A header's color colors only the header. It has no tag, so it says nothing to assistive technology.
+				style={color === null ? undefined : { "--tag": tagColorVariable(color) } as CSSProperties}
+				onContextMenu={onHeadContextMenu}
+			>
 				<button
 					type="button"
 					className="group-header"
@@ -251,6 +258,8 @@ export function RepositorySection({ state, store, repository, matches, open, que
 							removal={removal?.status ?? null}
 							sessions={sessionsOf(state, worktree.id)}
 							seen={state.seenStatuses}
+							tag={tagOf(state.preferences.tags, worktreeTagId(state.sidebarTags, repository.path, worktree.path))}
+							tags={state.preferences.tags}
 							portClash={describePortClash(clashMarks.get(worktree.path))}
 							actions={(
 								<>
@@ -272,6 +281,9 @@ export function RepositorySection({ state, store, repository, matches, open, que
 							onSyncAction={action => store.openDialog({ kind: "sync-action", action, repository: repository.path, worktree: worktree.id })}
 							syncOptions={syncOptionsOf(state, repository.path, worktree.path)}
 							onMenuChoice={id => {
+								// A tag is set at once, with no dialog.
+								const tag = tagOfMenuItem(id);
+								if (tag !== null) return void store.setWorktreeTag(repository.path, worktree.path, tag);
 								// For this row's worktree, not the selected one, and without selecting it.
 								const request = worktreeMenuChoice(repository.path, worktree, id, isBeingRemoved(state, repository.path, worktree.path), syncOptionsOf(state, repository.path, worktree.path));
 								if (request) store.openDialog(request);

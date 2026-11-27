@@ -1,3 +1,4 @@
+import { type TagChoice, TagField } from "./TagField";
 import { useEffect, useState, useSyncExternalStore } from "react";
 import type { SuggestedIssue } from "../../shared/issue-search";
 import type { Repository } from "../../shared/model";
@@ -29,6 +30,7 @@ export function startWorkMode(
 	submission: Pick<Submission, "clearFailure" | "getState">,
 	workflows: WorkflowOptions = undefined,
 	onCheckOut: (() => void) | null = null,
+	tag: TagChoice | null = null,
 ): WorktreeDialogMode {
 	const { fields, step, question } = state;
 	const running = submission.getState().running;
@@ -51,7 +53,7 @@ export function startWorkMode(
 		setupStart: step.kind === "form" ? "if-skipped" : "never",
 		worktree: step.kind === "form" ? null : step.worktree.path,
 		workflow: step.kind === "form" ? workflow : step.workflow,
-		run: () => model.run(workflow),
+		run: () => model.run(workflow, tag?.chosen),
 		fields: step.kind === "form"
 			? (
 				<>
@@ -83,6 +85,7 @@ export function startWorkMode(
 						/>
 						<span className="field-hint">Optional. Timber names the branch from the issue's title. A name typed here must start with {prefix}, and the worktree stays linked to {label}.</span>
 					</label>
+					{tag && <TagField tags={tag.tags} chosen={tag.chosen} disabled={running} onPick={tag.onPick} />}
 					<label className="field">
 						<span className="field-label">Start from</span>
 						<input
@@ -133,7 +136,7 @@ export function StartWorkDialog({ request, repository }: { request: Extract<Dial
 	const { submission, state: submissionState } = useSubmission(() => store.closeDialog());
 	const [controller] = useState(() => createWorktreeDialogController(store, repository.path, submission));
 	const [model] = useState(() => createStartWorkModel(store, repository.path, request.issue, selector ?? ""));
-	const { workflows } = useSyncExternalStore(controller.subscribe, controller.getState, controller.getState);
+	const { workflows, tag } = useSyncExternalStore(controller.subscribe, controller.getState, controller.getState);
 	const modelState = useSyncExternalStore(model.subscribe, model.getState, model.getState);
 	useEffect(() => {
 		if (selector === null) store.closeDialog();
@@ -148,7 +151,7 @@ export function StartWorkDialog({ request, repository }: { request: Extract<Dial
 	const onCheckOut = offersCheckOut(request.issue, githubRepository)
 		? () => store.openDialog({ kind: "check-out-pull-request", repository: request.repository, issue: request.issue })
 		: null;
-	const mode = startWorkMode(model, modelState, repository, request.issue, selector, submission, workflows, onCheckOut);
+	const mode = startWorkMode(model, modelState, repository, request.issue, selector, submission, workflows, onCheckOut, { tags: state.preferences.tags, chosen: tag, onPick: controller.pickTag });
 	return (
 		<WorktreeDialogFrame
 			title={`Start work on ${issueKeyLabel(request.issue.tracker, request.issue.key)} in ${repository.name}`}

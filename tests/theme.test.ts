@@ -15,6 +15,7 @@ import {
 	UI_COLOR_PROPERTIES,
 	contrastWarnings,
 	defaultThemeChoice,
+	TAG_COLORS,
 	findTheme,
 	readTheme,
 	readThemeChoice,
@@ -78,6 +79,15 @@ describe("the built-in themes", () => {
 		}
 	});
 
+	test("give five tag colors, none of them a status color, so a tag never reads as a status", () => {
+		const statuses = ["behind", "ahead", "modified", "untracked", "error", "merged", "focus"] as const;
+		for (const theme of BUILT_IN_THEMES) {
+			const tags = TAG_COLORS.map(tag => theme.ui[tag].toLowerCase());
+			expect({ id: theme.id, distinct: new Set(tags).size }).toEqual({ id: theme.id, distinct: 5 });
+			for (const status of statuses) expect({ id: theme.id, status, clash: tags.includes(theme.ui[status].toLowerCase()) }).toEqual({ id: theme.id, status, clash: false });
+		}
+	});
+
 	test("pass the contrast check", () => {
 		for (const theme of BUILT_IN_THEMES) expect({ id: theme.id, warnings: contrastWarnings(theme) }).toEqual({ id: theme.id, warnings: [] });
 	});
@@ -113,7 +123,7 @@ describe("contrastWarnings", () => {
 	test("name each color that is too close to a surface, with its ratio and the minimum", () => {
 		const faint = { ...DEFAULT_DARK_THEME, ui: { ...DEFAULT_DARK_THEME.ui, text3: "#3a3a40", error: "#2a1a1a" } };
 		const warnings = contrastWarnings(faint);
-		expect(warnings.filter(warning => warning.color === "text3").map(warning => warning.on)).toEqual(["bgApp", "bgMain", "bgPane", "bgRaised", "fillField"]);
+		expect(warnings.filter(warning => warning.color === "text3").map(warning => warning.on)).toEqual(["bgApp", "bgMain", "bgPane", "bgRaised", "fillField", "tag1", "tag2", "tag3", "tag4", "tag5"]);
 		expect(warnings.find(warning => warning.color === "error" && warning.on === "bgMain")).toEqual({ color: "error", on: "bgMain", ratio: expect.any(Number), minimum: 3 });
 		for (const warning of warnings) expect(warning.ratio).toBeLessThan(warning.minimum);
 		expect(warnings.every(warning => warning.color === "text3" || warning.color === "error")).toBe(true);
@@ -146,6 +156,14 @@ describe("readTheme", () => {
 		expect(replaced).not.toContain("ui.text");
 		expect(replaced).toContain("terminal.green");
 		expect(replaced).not.toContain("terminal.red");
+	});
+
+	test("a theme saved before the tag colors reads whole, with the built-in theme's tag colors", () => {
+		const { tag1: _1, tag2: _2, tag3: _3, tag4: _4, tag5: _5, ...older } = DEFAULT_LIGHT_THEME.ui;
+		const { theme, replaced } = readTheme({ ...DEFAULT_LIGHT_THEME, id: "custom-old", ui: older });
+		expect(replaced).toEqual([]);
+		expect([theme.ui.tag1, theme.ui.tag5]).toEqual([DEFAULT_LIGHT_THEME.ui.tag1, DEFAULT_LIGHT_THEME.ui.tag5]);
+		expect(readTheme({ ...DEFAULT_LIGHT_THEME, ui: { ...older, tag2: "#123456" } }).theme.ui.tag2).toBe("#123456");
 	});
 
 	test("a theme saved before the changed-word tints reads whole, with tints from its own colors", () => {
@@ -235,7 +253,7 @@ describe("the theme's stylesheet", () => {
 	});
 
 	test("defines every custom property the stylesheet uses, and the stylesheet has no color of its own", () => {
-		const defined = new Set([...Object.values(UI_COLOR_PROPERTIES), ...Object.values(TERMINAL_COLOR_PROPERTIES), "--font-ui", "--font-mono", "--font-terminal", "--sidebar-width", "--chops-width", "--steady-height"]);
+		const defined = new Set([...Object.values(UI_COLOR_PROPERTIES), ...Object.values(TERMINAL_COLOR_PROPERTIES), "--font-ui", "--font-mono", "--font-terminal", "--sidebar-width", "--chops-width", "--steady-height", "--tag"]);
 		const used = new Set([...STYLES.matchAll(/var\((--[a-z0-9-]+)/g)].map(match => match[1]!));
 		expect([...used].filter(name => !defined.has(name))).toEqual([]);
 		const withoutComments = STYLES.replace(/\/\*[\s\S]*?\*\//g, "");

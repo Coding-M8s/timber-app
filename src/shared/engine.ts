@@ -21,6 +21,7 @@ import type { Preferences } from "./preferences";
 import type { RepositoryAgentChange, RepositoryAgents } from "./repository-agents";
 import type { RepositoryGroups } from "./repository-groups";
 import type { IconChoice, IconTarget, RemoteIconSource, SidebarIconResult, SidebarIcons } from "./sidebar-icons";
+import type { HeaderTarget, SetWorktreeTagRequest, SidebarTags, SidebarTagsResult, TagColor } from "./worktree-tags";
 import type { RestartPlan, RestartResult } from "./restart";
 import type { IssueSearchRequest, IssueSearchResult } from "./issue-search";
 import type { IssueListRequest, IssueListResult } from "./issue-lists";
@@ -173,6 +174,29 @@ export interface Engine {
 	 * folder.
 	 */
 	setSidebarIcon(target: IconTarget, choice: IconChoice | null): Promise<SidebarIconResult>;
+	/**
+	 * The tags of worktrees and the colors of repository and group headers
+	 * (issue 409), as `SidebarTags` in ./worktree-tags.ts says. A worktree not
+	 * named is Work, and a header not named has no color. None while the
+	 * development override is set. Read from the app's settings only: nothing
+	 * about tags is ever kept in a repository or in Timber's metadata.
+	 */
+	listSidebarTags(): Promise<SidebarTags>;
+	/**
+	 * Give a worktree of a repository in the list one of the saved tags, or
+	 * with Work take its tag away. Only the app's settings change. A tag that
+	 * is not saved, or a repository not in the list, is `unknown` and saves
+	 * nothing. A worktree's tag is dropped once a listing of its repository no
+	 * longer names it, so a worktree made later at the same path is Work.
+	 * Removing a tag with `savePreferences` moves its worktrees back to Work.
+	 */
+	setWorktreeTag(request: SetWorktreeTagRequest): Promise<SidebarTagsResult>;
+	/**
+	 * Give the header of a repository in the list, or of a group, one of the
+	 * theme's tag colors, or with null take it away. A header has no tag and
+	 * no default color. Only the app's settings change.
+	 */
+	setHeaderColor(target: HeaderTarget, color: TagColor | null): Promise<SidebarTagsResult>;
 	/**
 	 * Read one repository again, named by the path of its primary checkout.
 	 * Null when Git could not read it there. As in `listRepositories`, a
