@@ -1023,6 +1023,13 @@ The app keeps its own list of repositories, so it is the same after a restart.
   Timber's order, so a save needs no invalidation. A worktree the order does
   not name follows the ones it names, so a new one is last, and a path that
   names no worktree is skipped. Removing the repository removes its order.
+  After a `list` or `reload` that worked, the order loses the paths that
+  listing no longer names (`withoutRemoved`), so a worktree made later at a
+  removed one's path is last rather than back in its old place. A repository
+  that is missing or that Timber could not list keeps its order, and so does
+  one whose order was saved after the listing started, as it may name a
+  worktree newer than the listing. That tidying waits its turn with the other
+  changes to the file, and a save that fails waits for the next listing.
   The store (`moveWorktree`, `stepWorktree`) moves among the rows that are not
   an arena's attempts, shows the move at once, saves the whole order of that
   repository with the attempts after the rest, and keeps it over a list or
