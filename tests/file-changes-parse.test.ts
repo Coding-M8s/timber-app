@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import {
-	type FileChange, MAX_DIFF_LINES, baseName, baseContentArguments, baseNamesArguments, commitArguments, diffArguments, filePathIn, parseDiff, parseNameStatus, parseNumstat, parseNumstatPaths, parseStatus, countAddedLines, uncommittedContentArguments, withLineCounts, readDiffOutput, relativePathProblem, savedBaseRef, sinceBase, statusArguments, withChangedContent,
+	type FileChange, type LineCounts, MAX_DIFF_LINES, baseName, baseContentArguments, baseNamesArguments, commitArguments, committedNamesArguments, diffArguments, filePathIn, parseDiff, parseNameStatus, parseNumstat, parseNumstatPaths, parseStatus, countAddedLines, uncommittedContentArguments, withLineCounts, readDiffOutput, relativePathProblem, savedBaseRef, sinceBase, statusArguments, unchangedBinaryCandidate, withChangedContent, withoutUnchangedBinaries,
 } from "../src/shared/file-changes";
 
 /** Every diff of tracked files leaves the index alone (see `NO_INDEX_REFRESH`). */
@@ -344,6 +344,23 @@ describe("comparing with the base", () => {
 		];
 		expect(withChangedContent(names, new Set(["new.txt"]))).toEqual([names[1]!]);
 		expect(withChangedContent(names, null)).toEqual(names);
+	});
+
+	test("withoutUnchangedBinaries leaves out a modified binary file only when neither the status nor a commit changed it", () => {
+		const base = (path: string, kind: FileChange["kind"] = "modified", previousPath: string | null = null): FileChange => ({ area: "base", kind, path, previousPath, added: null, removed: null, version: "" });
+		const binary: LineCounts = { added: null, removed: null };
+		const counts = new Map<string, LineCounts>([["touched.bin", binary], ["edited.bin", binary], ["committed.bin", binary], ["moved.bin", binary], ["text.txt", { added: 1, removed: 0 }], ["added.bin", binary]]);
+		const changed = [base("touched.bin"), base("edited.bin"), base("committed.bin"), base("moved.bin", "renamed", "was.bin"), base("text.txt"), base("added.bin", "added")];
+		const status: FileChange[] = [{ ...base("edited.bin"), area: "unstaged" }];
+		const committed = [base("committed.bin")];
+		expect(withoutUnchangedBinaries(changed, counts, status, committed).map(file => file.path)).toEqual(["edited.bin", "committed.bin", "moved.bin", "text.txt", "added.bin"]);
+		expect(withoutUnchangedBinaries(changed, counts, status, null)).toEqual(changed);
+		expect(changed.map(file => unchangedBinaryCandidate(file, counts))).toEqual([true, true, true, false, false, false]);
+	});
+
+	test("the committed diff compares the branch point with HEAD, tree to tree, with literal paths and no renames", () => {
+		expect(committedNamesArguments(COMMIT)).toEqual(["--literal-pathspecs", "diff", "--no-color", "--no-ext-diff", "--name-status", "-z", "--no-renames", COMMIT, "HEAD", "--"]);
+		expect(committedNamesArguments(COMMIT, ["a b.bin"])).toEqual(["--literal-pathspecs", "diff", "--no-color", "--no-ext-diff", "--name-status", "-z", "--no-renames", COMMIT, "HEAD", "--", "a b.bin"]);
 	});
 
 	test("the base diff names the commit, literal paths, and plain output", () => {

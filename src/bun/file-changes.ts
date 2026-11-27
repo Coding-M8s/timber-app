@@ -3,8 +3,8 @@ import { isAbsolute, join } from "node:path";
 import { COMMIT_ARGUMENTS, COMMIT_COMMAND_LINE, type CommitRequest, type CommitResult, type GitOperation, NOT_COMMITTED, OPERATION_MARKERS, commitBlocker, emptyMessage, operationOf } from "../shared/commit-staged";
 import {
 	type BaseComparison, type FileChange, type FileChangesRequest, type FileChangesResult, type FileDiffRequest, type FileDiffResult, type LineCounts,
-	MAX_DIFF_BYTES, MAX_LISTED_FILES, MAX_STATUS_BYTES, baseContentArguments, baseNamesArguments, commitArguments, countAddedLines, diffArguments, isCommitHash, parseNameStatus, parseNumstat,
-	parseStatus, baseName, readDiffOutput, relativePathProblem, sameFileChange, savedBaseRef, sinceBase, statusArguments, uncommittedContentArguments, withChangedContent, withLineCounts,
+	MAX_DIFF_BYTES, MAX_LISTED_FILES, MAX_STATUS_BYTES, baseContentArguments, baseNamesArguments, commitArguments, committedNamesArguments, countAddedLines, diffArguments, isCommitHash, parseNameStatus, parseNumstat,
+	parseStatus, baseName, readDiffOutput, relativePathProblem, sameFileChange, savedBaseRef, sinceBase, statusArguments, uncommittedContentArguments, unchangedBinaryCandidate, withChangedContent, withLineCounts, withoutUnchangedBinaries,
 } from "../shared/file-changes";
 import { type IndexAction, type IndexWriteRequest, type IndexWriteResult, canWriteIndex, indexCommand } from "../shared/index-writes";
 import { type GenerateKind, MAX_GENERATE_LOG_BYTES, type WorktreePart, NO_COMMITS_AHEAD, commitGenerateBlocker, cutDiff } from "../shared/generate-text";
@@ -345,6 +345,17 @@ export function createFileChanges(dependencies: FileChangesDependencies): FileCh
 		return { usable: true, ref: saved.ref, name, commit };
 	}
 
+	/**
+	 * What the commits since `commit` changed, for `withoutUnchangedBinaries`.
+	 * Null keeps every file: when no binary file needs the check, or the status
+	 * was cut short and so cannot vouch for a file it does not list.
+	 */
+	async function committedSince(worktree: string, commit: string, named: readonly FileChange[], counts: ReadonlyMap<string, LineCounts>, statusCut: boolean, paths: readonly string[]): Promise<FileChange[] | null> {
+		if (statusCut || !named.some(file => unchangedBinaryCandidate(file, counts))) return null;
+		const answer = await run(worktree, committedNamesArguments(commit, paths), MAX_STATUS_BYTES, [0]);
+		return answer.ok && !answer.truncated ? parseNameStatus(answer.text) : null;
+	}
+
 	/** Every change since the branch point `commit`, with conflicts and untracked files from the status. */
 	async function changedSince(worktree: string, commit: string, paths: readonly string[] = []): Promise<FileList> {
 		const read = await statusOnly(worktree, paths);
@@ -356,7 +367,8 @@ export function createFileChanges(dependencies: FileChangesDependencies): FileCh
 		if (!answer.ok) return { ok: false, message: `Git could not compare ${worktree} with its base: ${answer.message}` };
 		// Counts that failed or were cut short check nothing: every name is kept rather than a real change left out.
 		const counts = content.ok && !content.truncated ? parseNumstat(content.text) : null;
-		const changed = withChangedContent(parseNameStatus(answer.text), counts === null ? null : new Set(counts.keys()));
+		const named = withChangedContent(parseNameStatus(answer.text), counts === null ? null : new Set(counts.keys()));
+		const changed = counts === null ? named : withoutUnchangedBinaries(named, counts, read.files, await committedSince(worktree, commit, named, counts, read.truncated, paths));
 		const all = sinceBase(read.files, changed);
 		const files = all.slice(0, MAX_LISTED_FILES);
 		const untracked = await untrackedLines(worktree, files);
