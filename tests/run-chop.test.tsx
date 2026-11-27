@@ -2,8 +2,6 @@ import { describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
 import { App } from "../src/mainview/App";
 import { ApproveChopView } from "../src/mainview/components/ApproveChopDialog";
-import { ChopsSectionView, describeNotAChord } from "../src/mainview/components/settings/ChopsSection";
-import { chopsSectionChange, chopsDraftModel } from "../src/mainview/chop-format";
 import { chopsButtonHint, takesChopsPanelKey } from "../src/mainview/chops-panel-format";
 import { createMockEngine, sampleRepositories } from "../src/mainview/engine/mock";
 import { NO_WORKTREE_SELECTED } from "../src/mainview/palette";
@@ -335,38 +333,5 @@ describe("running from the chop search", () => {
 		await store.runChop(TIMBER, FEATURE.id, "Typecheck", size(), { text: "x".repeat(10_001) });
 		expect(store.getState().terminalProblem?.message).toContain("longer than 10000 characters");
 		expect(store.getState().terminals).toEqual([]);
-	});
-});
-
-describe("the chop shortcuts in Settings, Chops", () => {
-	const view = (switches: { useChops: boolean; playChopSounds: boolean; shortcuts?: Record<string, string> }, mac = false) => renderToStaticMarkup(
-		<ChopsSectionView
-			mac={mac} drafts={[]} saved={[]} switches={switches} canSave={false} repositories={[]} agents={[]} repository={null}
-			save={{ saving: false, failure: null, saved: false } as never} onSwitch={() => {}} onAdd={() => {}} onEdit={() => {}} onRemove={() => {}} onSave={() => {}} onReadAgain={() => {}}
-		/>,
-	);
-
-	test("shows both keys as set, for this platform, with Reset only for one that is not the default", () => {
-		const markup = view({ useChops: true, playChopSounds: true, shortcuts: { "run-chop": "Ctrl+Shift+R" } });
-		expect(markup).toContain("Show or hide the panel");
-		expect(markup).toContain("Search and run a chop");
-		expect(markup).toContain('value="Ctrl+Shift+K"');
-		expect(markup).toContain('value="Ctrl+Shift+R"');
-		expect(markup).toContain("Reset Search and run a chop to Ctrl+Shift+T");
-		expect(markup).not.toContain("Reset Show or hide the panel");
-		expect(view({ useChops: true, playChopSounds: true }, true)).toContain('value="Cmd+Shift+T"');
-	});
-
-	test("are gone while Use chops is off", () => {
-		expect(view({ useChops: false, playChopSounds: true })).not.toContain("Search and run a chop");
-	});
-
-	test("a changed key saves with the section, and a key that is not a chord says what to press", () => {
-		const model = chopsDraftModel([], []);
-		const on = { useChops: true, playChopSounds: true, shortcuts: {} };
-		expect(chopsSectionChange(model, [], { ...on, shortcuts: { "run-chop": "Ctrl+Shift+R" } }, on)).toEqual({ shortcuts: { "run-chop": "Ctrl+Shift+R" } });
-		expect(chopsSectionChange(model, [], { ...on, shortcuts: { "run-chop": "Ctrl+Shift+T" } }, on)).toBeNull();
-		expect(describeNotAChord(false)).toBe("Press Ctrl+Shift and a letter, such as Ctrl+Shift+T.");
-		expect(describeNotAChord(true)).toBe("Press Cmd+Shift and a letter, such as Cmd+Shift+T.");
 	});
 });

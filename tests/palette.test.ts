@@ -48,6 +48,13 @@ describe("palette shortcuts", () => {
 		}
 	});
 
+	test("every key reads as set in Settings", async () => {
+		const { store } = await sampleState();
+		await store.savePreferences({ shortcuts: { "next-waiting": "Ctrl+Shift+N", "files-panel": "Ctrl+Shift+X", "changes-panel": "Ctrl+Shift+E" } });
+		expect(keys(store.getState(), false)).toMatchObject({ "action:next-waiting": "Ctrl+Shift+N", "action:files": "Ctrl+Shift+X", "action:changes": "Ctrl+Shift+E" });
+		expect(keys(store.getState(), true)).toMatchObject({ "action:next-waiting": "Cmd+Shift+N", "action:files": "Cmd+Shift+X", "action:changes": "Cmd+Shift+E" });
+	});
+
 	test("the chop keys read as set in Settings", async () => {
 		const { store } = await sampleState();
 		await store.savePreferences({ shortcuts: { "chops-panel": "Ctrl+Shift+L", "run-chop": "Ctrl+Shift+Y" } });

@@ -4,12 +4,8 @@ import { WebLinksAddon } from "@xterm/addon-web-links";
 import { WebglAddon } from "@xterm/addon-webgl";
 import { Terminal } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
-import { isPaletteShortcut } from "./palette";
-import { isWaitingShortcut } from "./waiting";
-import { takesChopsPanelKey } from "./chops-panel-format";
-import { takesRunChopKey } from "./run-chop-format";
-import { takesFilesPanelKey } from "./files-panel-format";
-import { takesChangesPanelKey } from "./changes-panel-format";
+import { shortcutLetter } from "../shared/shortcuts";
+import { terminalLeavesToApp } from "./terminal-app-keys";
 import type { AppStore } from "./store/store";
 import { TERMINAL_LINE_HEIGHT, type TerminalAppearance, terminalFontStack } from "../shared/terminal-appearance";
 import { TERMINAL_MINIMUM_CONTRAST, terminalColors, watchTerminalColors } from "./terminal-colors";
@@ -141,20 +137,11 @@ function createView(store: AppStore, id: string): TerminalView {
 	terminal.onData(data => store.writeTerminal(id, data));
 	terminal.onResize(({ cols, rows }) => store.resizeTerminal(id, cols, rows));
 	terminal.attachCustomKeyEventHandler(event => {
-		// The palette shortcut is the app's key, so it is never sent to the program.
-		if (isPaletteShortcut(event)) return false;
-		// So is the key for the next session that needs you or is done, even when there is none: Ctrl+J would reach the program as a new line.
-		if (isWaitingShortcut(event)) return false;
-		// The chops panel's key too, but only while it can show or hide the panel: with chops off it is the program's.
-		if (takesChopsPanelKey(event, store.getState())) return false;
-		// And the chop search's, while it can open: Ctrl+Shift+T would reach the program as Ctrl+T.
-		if (takesRunChopKey(event, store.getState())) return false;
-		// The files' key as well, while it can show or hide them, so Ctrl+E does not reach the program with it.
-		if (takesFilesPanelKey(event, store.getState())) return false;
-		// And the Changes view's, so Ctrl+G does not reach the program with it.
-		if (takesChangesPanelKey(event, store.getState())) return false;
+		// The app's shortcuts, by the keys set in Settings, Shortcuts, are never sent to the program.
+		if (terminalLeavesToApp(event, store.getState())) return false;
+		const keys = store.getState().preferences.shortcuts;
 		// Switching sessions and going to the chips are the app's keys, never the program's.
-		const move = sessionKey(event, mac);
+		const move = sessionKey(event, mac, shortcutLetter(keys, "session-chips"));
 		if (move !== null) {
 			event.preventDefault();
 			if (move === "chips") document.getElementById(sessionChipId(id))?.focus();

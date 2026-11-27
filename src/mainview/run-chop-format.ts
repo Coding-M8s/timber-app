@@ -289,7 +289,7 @@ export function describeEditStep(chop: Pick<ListedChop, "name" | "kind">, worktr
 	return `Edit ${chop.name} for this run only${where}. The saved ${chop.kind} stays as it is.`;
 }
 
-/** The search's shortcut for this platform: the key set in Settings, Chops, or Ctrl+Shift+T (Cmd+Shift+T on macOS). */
+/** The search's shortcut for this platform: the key set in Settings, Shortcuts, or Ctrl+Shift+T (Cmd+Shift+T on macOS). */
 export function runChopShortcut(state: Pick<AppState, "preferences">, mac: boolean): string {
 	return describeChord(shortcutLetter(state.preferences.shortcuts, "run-chop"), mac);
 }

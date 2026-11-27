@@ -51,7 +51,7 @@ export const CHOPS_WIDTH_LABEL = "Chops panel width";
 export const CHOPS_PANEL_SHORTCUT = "Ctrl+Shift+K";
 export const CHOPS_PANEL_SHORTCUT_MAC = "Cmd+Shift+K";
 
-/** The panel's shortcut for this platform: the key set in Settings, Chops, or Ctrl+Shift+K (Cmd+Shift+K on macOS). */
+/** The panel's shortcut for this platform: the key set in Settings, Shortcuts, or Ctrl+Shift+K (Cmd+Shift+K on macOS). */
 export function chopsPanelShortcut(mac: boolean, letter: ShortcutLetter = DEFAULT_SHORTCUTS["chops-panel"]): string {
 	return describeChord(letter, mac);
 }

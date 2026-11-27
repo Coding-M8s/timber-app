@@ -90,15 +90,17 @@ describe.skipIf(browserPath === null || process.platform === "win32")("the chop 
 		expect(await page.evaluate<string>(`${STORE}.getState().preferences.chops[0].text`)).toBe("pwd");
 	}, 30_000);
 
-	test("Settings, Chops takes a new search key by pressing it, refuses the palette's with the reason, and the new key opens the search", async () => {
+	test("Settings, Shortcuts takes a new search key by pressing it, refuses the terminal's copy and the palette's with the reason, and the new key opens the search", async () => {
 		await ready();
-		await page.evaluate(`${STORE}.openDialog({ kind: "settings", section: "chops" })`);
-		const FIELD = `[...document.querySelectorAll(".chop-shortcut")].find(field => field.textContent.includes("Search and run a chop"))`;
-		await page.until(`${FIELD} !== undefined`, "the shortcut field showed");
+		await page.evaluate(`${STORE}.openDialog({ kind: "settings", section: "shortcuts" })`);
+		const FIELD = `document.querySelector('.shortcut-field[data-shortcut="run-chop"]')`;
+		await page.until(`${FIELD} !== null`, "the shortcut field showed");
 		await page.evaluate(`${FIELD}.querySelector("input").focus()`);
 		expect(await page.evaluate<string>(`${FIELD}.querySelector("input").value`)).toBe("Ctrl+Shift+T");
+		await page.press("C", "ctrlShift");
+		await page.until(`${FIELD}.querySelector('[role="alert"]')?.textContent === "Ctrl+Shift+C copies in a terminal on Linux and Windows, so it cannot be the key that searches and runs a chop."`, "the terminal's copy was refused");
 		await page.press("P", "ctrlShift");
-		await page.until(`${FIELD}.querySelector('[role="alert"]')?.textContent === "Ctrl+Shift+P opens the command palette, so it cannot be the key that searches and runs a chop."`, "the palette's key was refused");
+		await page.until(`${FIELD}.querySelector('[role="alert"]')?.textContent === "Ctrl+Shift+P already opens the command palette. Change that one first."`, "the palette's key was refused");
 		expect(await page.evaluate<string>(`${FIELD}.querySelector("input").value`)).toBe("Ctrl+Shift+T");
 		expect(await page.evaluate<string>(`${STORE}.getState().dialog.kind`)).toBe("settings");
 		await page.press("K", "ctrlShift");
@@ -106,13 +108,36 @@ describe.skipIf(browserPath === null || process.platform === "win32")("the chop 
 		await page.press("Y", "ctrlShift");
 		await page.until(`${FIELD}.querySelector("input").value === "Ctrl+Shift+Y"`, "the new key showed");
 		expect(await page.evaluate<boolean>(`${FIELD}.querySelector('[role="alert"]') === null`)).toBe(true);
-		// Every section is in the page; the Chops one's Save is the one with something to save.
+		// Every section is in the page; the Shortcuts one's Save is the one with something to save.
 		await page.evaluate(`${FIELD}.closest("form").querySelector('button[type="submit"]').click()`);
 		await page.until(`${STORE}.getState().preferences.shortcuts["run-chop"] === "Ctrl+Shift+Y"`, "the key was saved");
 		await page.evaluate(`${STORE}.closeDialog()`);
 		await page.until(`${STORE}.getState().dialog === null`, "Settings closed");
 		await page.press("Y", "ctrlShift");
 		await page.until(OPEN, "the new key opened the search");
+	}, 30_000);
+
+	test("the palette's key moved in Settings, Shortcuts opens the palette, and the key set aside opens nothing", async () => {
+		await page.evaluate(`${STORE}.openDialog({ kind: "settings", section: "shortcuts" })`);
+		const FIELD = `document.querySelector('.shortcut-field[data-shortcut="palette"]')`;
+		await page.until(`${FIELD} !== null`, "the palette's field showed");
+		await page.evaluate(`${FIELD}.querySelector("input").focus()`);
+		await page.press("O", "ctrlShift");
+		await page.until(`${FIELD}.querySelector("input").value === "Ctrl+Shift+O"`, "the new key showed");
+		await page.evaluate(`${FIELD}.closest("form").querySelector('button[type="submit"]').click()`);
+		await page.until(`${STORE}.getState().preferences.shortcuts.palette === "Ctrl+Shift+O"`, "the key was saved");
+		await page.evaluate(`${STORE}.closeDialog()`);
+		await page.until(`${STORE}.getState().dialog === null`, "Settings closed");
+		// The title bar's button names the key as set.
+		expect(await page.evaluate<string>(`document.querySelector(".titlebar-palette").title`)).toContain("(Ctrl+Shift+O)");
+		await page.press("P", "ctrlShift");
+		await Bun.sleep(200);
+		expect(await page.evaluate<boolean>(`${STORE}.getState().dialog === null`)).toBe(true);
+		await page.press("O", "ctrlShift");
+		await page.until(`${STORE}.getState().dialog?.kind === "palette"`, "the new key opened the palette");
+		await page.press("O", "ctrlShift");
+		await page.until(`${STORE}.getState().dialog === null`, "the new key closed it again");
+		await page.evaluate(`${STORE}.savePreferences({ shortcuts: {} })`);
 	}, 30_000);
 
 	test("with Use chops off, the key opens nothing", async () => {

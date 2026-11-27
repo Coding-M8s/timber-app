@@ -1,5 +1,6 @@
 import { alertStatus, shownStatus } from "../shared/session-status";
 import type { TerminalSession } from "../shared/terminal";
+import { DEFAULT_SHORTCUTS, type ShortcutLetter, describeChord, matchesChord } from "../shared/shortcuts";
 
 /**
  * The sessions that need the person, across every repository, then the ones
@@ -105,23 +106,23 @@ export function describeToVisit(waiting: number, finished: number): string {
 export const WAITING_LABEL = "Show next session that needs you or is done";
 export const NONE_WAITING = "No session needs you or is done.";
 
-/** The shortcut that shows the next session that needs you or is done. */
+/** The shortcut that shows the next session that needs you or is done, until another is set in Settings, Shortcuts. */
 export const WAITING_SHORTCUT = "Ctrl+Shift+J";
 export const WAITING_SHORTCUT_MAC = "Cmd+Shift+J";
 
-export function waitingShortcut(mac: boolean): string {
-	return mac ? WAITING_SHORTCUT_MAC : WAITING_SHORTCUT;
+/** The key as set, for this platform. */
+export function waitingShortcut(mac: boolean, letter: ShortcutLetter = DEFAULT_SHORTCUTS["next-waiting"]): string {
+	return describeChord(letter, mac);
 }
 
-/** The title bar item's tooltip, which names the shortcut for this platform. */
-export function waitingHint(mac: boolean): string {
-	return `${WAITING_LABEL} (${waitingShortcut(mac)})`;
+/** The title bar item's tooltip, which names the key as set, for this platform. */
+export function waitingHint(mac: boolean, letter: ShortcutLetter = DEFAULT_SHORTCUTS["next-waiting"]): string {
+	return `${WAITING_LABEL} (${waitingShortcut(mac, letter)})`;
 }
 
 type Keys = Pick<KeyboardEvent, "type" | "key" | "ctrlKey" | "shiftKey" | "metaKey" | "altKey">;
 
-/** Ctrl+Shift+J, or Cmd+Shift+J on macOS. Either modifier counts, as for the palette's shortcut. */
-export function isWaitingShortcut(event: Keys): boolean {
-	if (event.type !== "keydown" || event.altKey || !event.shiftKey) return false;
-	return (event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "j";
+/** Ctrl+Shift and the letter set, Ctrl+Shift+J until another is, or Cmd+Shift on macOS. Either modifier counts, as for the palette's shortcut. */
+export function isWaitingShortcut(event: Keys, letter: ShortcutLetter = DEFAULT_SHORTCUTS["next-waiting"]): boolean {
+	return matchesChord(event, letter);
 }

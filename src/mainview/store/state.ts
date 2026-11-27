@@ -434,7 +434,7 @@ export type DialogRequest =
 	| { kind: "start-work"; repository: string; issue: SuggestedIssue };
 
 /** The sections of the Settings dialog, in the order they are listed. */
-export const SETTINGS_SECTIONS = ["layout", "tags", "theme", "terminal", "rendering", "editor", "agents", "chops", "notifications", "fetch", "pull", "about", "executable", "machine", "repository"] as const;
+export const SETTINGS_SECTIONS = ["layout", "tags", "theme", "terminal", "rendering", "editor", "agents", "chops", "shortcuts", "notifications", "fetch", "pull", "about", "executable", "machine", "repository"] as const;
 export type SettingsSection = typeof SETTINGS_SECTIONS[number];
 
 /**

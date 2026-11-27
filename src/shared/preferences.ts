@@ -81,10 +81,10 @@ export interface Preferences {
 	/** Whether a chop's sound plays when it starts. Off silences every chop sound, and keeps each chop's choice. */
 	playChopSounds: boolean;
 	/**
-	 * The keys set in Settings for the shortcuts that can be changed, by id
-	 * (./shortcuts.ts): the chops panel's and the one that searches and runs
-	 * a chop. Only the ones that differ from their default. A set that takes
-	 * a key the app keeps, or gives two shortcuts one key, is refused.
+	 * The keys set in Settings, Shortcuts for the app's shortcuts, by id
+	 * (./shortcuts.ts). Only the ones that differ from their default. A set
+	 * that takes a key a terminal or the text editor keeps, or gives two
+	 * shortcuts one key, is refused.
 	 */
 	shortcuts: ShortcutSettings;
 	/** Whether and how often the app fetches every repository in the background. */

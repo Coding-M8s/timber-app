@@ -1,22 +1,20 @@
 import { NEW_ARENA_LABEL, arenasUnavailable } from "./arena-format";
-import { changesPanelShortcut } from "./changes-panel-format";
 import { type ChopAction, chopAction, chopEntries, runChopLabel } from "./chop-format";
-import { chopsPanelShortcut } from "./chops-panel-format";
 import { type EditorAction, OPEN_IN_EDITOR, describeEditorAction } from "./editor-format";
 import { CLEAN_UP_LABEL, CLEAN_UP_TITLE, cleanUpUnavailableReason, mergedCandidates } from "./clean-up-format";
 import { BEING_REMOVED_REASON, DONE_PRIMARY_NOTE } from "./done-format";
 import { fetchUnavailable } from "./fetch-format";
-import { COLLAPSE_FOLDERS_LABEL, collapseUnavailable, filesPanelShortcut } from "./files-panel-format";
+import { COLLAPSE_FOLDERS_LABEL, collapseUnavailable } from "./files-panel-format";
 import { worktreeLabel } from "./format";
 import { tagOf, worktreeTagId } from "../shared/worktree-tags";
 import { REBASE_FOLDER_MISSING } from "./rebase-format";
 import { RUN_CHOP_LABEL, runChopShortcut } from "./run-chop-format";
-import { shortcutLetter } from "../shared/shortcuts";
+import { DEFAULT_SHORTCUTS, type ShortcutLetter, describeChord, isShortcut, matchesChord, shortcutKeys } from "../shared/shortcuts";
 import type { Repository } from "../shared/model";
 import { type AppState, type DialogRequest, changesPanelShown, chopsEnabled, chopsPanelShown, filesPanelShown, isBeingRemoved, syncOptionsOf, isRunning, offeredChops, finishedSessions, selectedWorktree, sessionsOf, waitingSessions } from "./store/state";
 import type { SidePanelView } from "../shared/layout";
 import { type RowSessionMark, describeRowSessions } from "./terminal-format";
-import { NONE_WAITING, WAITING_LABEL, describeToVisit, waitingShortcut } from "./waiting";
+import { NONE_WAITING, WAITING_LABEL, describeToVisit } from "./waiting";
 import { PULLING_REASON, SYNC_ACTION_WORDS, pullInsteadOfRebase, syncMenuEntries } from "./sync-action-format";
 
 /** The palette's entry for choosing the selected worktree's tag (issue 409), and the other words that find it. */
@@ -137,20 +135,25 @@ export function chopBlockedReason(action: ChopAction, place: ChopPlace | null): 
 	return place.removing ? BEING_REMOVED_REASON : null;
 }
 
-/** The shortcut that opens the palette, as shown on the title bar button. */
+/** The shortcut that opens the palette until another is set in Settings, Shortcuts. */
 export const PALETTE_SHORTCUT = "Ctrl+Shift+P";
 export const PALETTE_SHORTCUT_MAC = "Cmd+Shift+P";
 
-export function paletteHint(mac: boolean): string {
-	return `${PALETTE_LABEL} (${mac ? PALETTE_SHORTCUT_MAC : PALETTE_SHORTCUT})`;
+/** The title bar button's tooltip, which names the key as set, for this platform. */
+export function paletteHint(mac: boolean, letter: ShortcutLetter = DEFAULT_SHORTCUTS.palette): string {
+	return `${PALETTE_LABEL} (${describeChord(letter, mac)})`;
 }
 
 type Keys = Pick<KeyboardEvent, "type" | "key" | "ctrlKey" | "shiftKey" | "metaKey" | "altKey">;
 
-/** Ctrl+Shift+P, or Cmd+Shift+P on macOS. Either modifier counts, so the key needs no platform test. */
-export function isPaletteShortcut(event: Keys): boolean {
-	if (event.type !== "keydown" || event.altKey || !event.shiftKey) return false;
-	return (event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "p";
+/** Ctrl+Shift and the letter set, Ctrl+Shift+P until another is, or Cmd+Shift on macOS. Either modifier counts, so the key needs no platform test. */
+export function isPaletteShortcut(event: Keys, letter: ShortcutLetter = DEFAULT_SHORTCUTS.palette): boolean {
+	return matchesChord(event, letter);
+}
+
+/** Whether a key press is the palette's shortcut as set in Settings. */
+export function takesPaletteKey(event: Keys, state: Pick<AppState, "preferences">): boolean {
+	return isShortcut(event, state.preferences.shortcuts, "palette");
 }
 
 /**
@@ -316,22 +319,22 @@ function actionEntries(state: AppState, mac: boolean): PaletteEntry[] {
 	const waiting = waitingSessions(state).length;
 	const finished = finishedSessions(state).length;
 	add(inApp("next"), "next-waiting", WAITING_LABEL, "Shows the session that has waited longest, then the one that finished first.", waiting + finished === 0 ? NONE_WAITING : null,
-		{ kind: "next-waiting" }, ["needs you", "waiting", "done", "finished", "agent", "jump", "attention"], describeToVisit(waiting, finished), waitingShortcut(mac));
+		{ kind: "next-waiting" }, ["needs you", "waiting", "done", "finished", "agent", "jump", "attention"], describeToVisit(waiting, finished), shortcutKeys(state.preferences.shortcuts, "next-waiting", mac));
 	// Only while chops are in use, as their button and keys are. A "Run chop: <name>" row has no key of its own.
 	if (chopsEnabled(state)) {
 		const chopsShown = chopsPanelShown(state);
 		add(inApp("chops"), "chops", chopsShown ? "Hide chops" : "Show chops", chopsShown ? "Hides the chops panel." : "Shows the chops in the side panel.", null,
-			{ kind: "side-panel", view: "chops" }, ["side panel", "saved commands", "prompts"], "", chopsPanelShortcut(mac, shortcutLetter(state.preferences.shortcuts, "chops-panel")));
+			{ kind: "side-panel", view: "chops" }, ["side panel", "saved commands", "prompts"], "", shortcutKeys(state.preferences.shortcuts, "chops-panel", mac));
 		add(inApp("search"), "run-chop", RUN_CHOP_LABEL, "Opens the chop search, to find a chop and run it.", null,
 			{ kind: "dialog", request: { kind: "run-chop" } }, ["search chops", "find", "saved commands", "prompts"], "", runChopShortcut(state, mac));
 	}
 	const filesShown = filesPanelShown(state);
 	add(inApp("files"), "files", filesShown ? "Hide files" : "Show files", filesShown ? "Hides the Files view of the side panel." : "Shows the selected worktree's files in the side panel.", null,
-		{ kind: "side-panel", view: "files" }, ["explorer", "tree", "folders", "side panel"], "", filesPanelShortcut(mac));
+		{ kind: "side-panel", view: "files" }, ["explorer", "tree", "folders", "side panel"], "", shortcutKeys(state.preferences.shortcuts, "files-panel", mac));
 	const changesShown = changesPanelShown(state);
 	add(inApp("changes"), "changes", changesShown ? "Hide changes" : "Show changes",
 		changesShown ? "Hides the Changes view of the side panel." : "Shows the selected worktree's changes and review in the side panel.", null,
-		{ kind: "side-panel", view: "changes" }, ["diff", "review", "git status", "side panel", "files changed"], "", changesPanelShortcut(mac));
+		{ kind: "side-panel", view: "changes" }, ["diff", "review", "git status", "side panel", "files changed"], "", shortcutKeys(state.preferences.shortcuts, "changes-panel", mac));
 	add(inApp("settings"), "settings", "Settings", "Opens Settings.", null, { kind: "dialog", request: { kind: "settings" } }, ["preferences", "options"]);
 	add(inApp("add-repository"), "add-repository", "Add repository", "Adds a Git repository's folder to the list.", isRunning(state, "add-repository") ? ADDING_REPOSITORY : null,
 		{ kind: "add-repository" }, ["folder", "project"]);

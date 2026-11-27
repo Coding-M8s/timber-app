@@ -176,6 +176,22 @@ describe("the saved preferences in the main process", () => {
 		expect(await appOn().preferences.load()).toEqual({ sidebarSide: "right", tags: writeTags(DEFAULT_TAGS), editor: null, agents: DEFAULT_AGENTS, generateWith: "", chops: [], useChops: true, chopOrder: {}, fileChopSounds: {}, playChopSounds: true, shortcuts: {}, fetch: defaultFetchSetting(), pull: defaultPullConfirmSetting(), zoom: 1, theme: defaultThemeChoice(), customThemes: [], terminal: defaultTerminalAppearance(), sessionNames: "plain" as const, statusNotifications: true, notifyStates: ["needs-you", "done", "error", "crashed"] as const, sounds: defaultStateSounds(), dmabuf: "auto" as const, timber: { kind: "bundled" as const } });
 	});
 
+	test("keep every shortcut as set across a restart, and refuse one that clashes without saving any of it", async () => {
+		const moved = { palette: "Ctrl+Shift+O", "next-waiting": "Ctrl+Shift+P", "session-chips": "Ctrl+Shift+A", "files-panel": "Ctrl+Shift+X" };
+		expect(await appOn().preferences.save({ shortcuts: moved })).toMatchObject({ outcome: "saved", preferences: { shortcuts: moved } });
+		expect(onDisk().preferences.shortcuts).toEqual(moved);
+		// A new holder on the same file is what a restarted app has.
+		expect((await appOn().preferences.load()).shortcuts).toEqual(moved);
+		const before = readFileSync(settingsFile, "utf8");
+		// The changes' key on the palette's as set, then on the terminal's copy: both refused, the file untouched.
+		expect(await appOn().preferences.save({ shortcuts: { ...moved, "changes-panel": "Ctrl+Shift+O" } })).toEqual({ outcome: "failed", message: "Nothing was saved, because these settings could not be read: shortcuts." });
+		expect(await appOn().preferences.save({ shortcuts: { "changes-panel": "Ctrl+Shift+C" } })).toMatchObject({ outcome: "failed" });
+		expect(readFileSync(settingsFile, "utf8")).toBe(before);
+		// Reset to the defaults, a default saved as nothing.
+		expect(await appOn().preferences.save({ shortcuts: { palette: "Ctrl+Shift+P" } })).toMatchObject({ outcome: "saved", preferences: { shortcuts: {} } });
+		expect((await appOn().preferences.load()).shortcuts).toEqual({});
+	});
+
 	test("check what the interface sent, and refuse a change they cannot read without saving any of it", async () => {
 		const { preferences } = appOn();
 		await preferences.save({ sidebarSide: "right" });

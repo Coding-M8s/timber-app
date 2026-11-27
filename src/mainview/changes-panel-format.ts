@@ -1,5 +1,6 @@
 import type { FileChangeTarget } from "../shared/file-changes";
 import { describeNoteCount } from "./review-format";
+import { DEFAULT_SHORTCUTS, type ShortcutLetter, describeChord, matchesChord, shortcutLetter } from "../shared/shortcuts";
 import { type AppState, canToggleSidePanel, shownDiffTab } from "./store/state";
 
 /**
@@ -26,26 +27,26 @@ export const NO_NOTES_HINT = "Click a line number in a diff to leave a note. Not
 export const CHANGES_PANEL_SHORTCUT = "Ctrl+Shift+G";
 export const CHANGES_PANEL_SHORTCUT_MAC = "Cmd+Shift+G";
 
-export function changesPanelShortcut(mac: boolean): string {
-	return mac ? CHANGES_PANEL_SHORTCUT_MAC : CHANGES_PANEL_SHORTCUT;
+/** The key as set in Settings, Shortcuts, Ctrl+Shift+G until another is, for this platform. */
+export function changesPanelShortcut(mac: boolean, letter: ShortcutLetter = DEFAULT_SHORTCUTS["changes-panel"]): string {
+	return describeChord(letter, mac);
 }
 
-/** The Changes button's tooltip: what a click does now, and the shortcut for this platform. */
-export function changesButtonHint(open: boolean, mac: boolean): string {
-	return `${open ? "Hide" : "Show"} changes (${changesPanelShortcut(mac)})`;
+/** The Changes button's tooltip: what a click does now, and the key as set, for this platform. */
+export function changesButtonHint(open: boolean, mac: boolean, letter: ShortcutLetter = DEFAULT_SHORTCUTS["changes-panel"]): string {
+	return `${open ? "Hide" : "Show"} changes (${changesPanelShortcut(mac, letter)})`;
 }
 
 type Keys = Pick<KeyboardEvent, "type" | "key" | "ctrlKey" | "shiftKey" | "metaKey" | "altKey">;
 
-/** Ctrl+Shift+G, or Cmd+Shift+G on macOS. Either modifier counts, as for the other side panel shortcuts. */
-export function isChangesPanelShortcut(event: Keys): boolean {
-	if (event.type !== "keydown" || event.altKey || !event.shiftKey) return false;
-	return (event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "g";
+/** Ctrl+Shift and the letter set, Ctrl+Shift+G until another is, or Cmd+Shift on macOS. Either modifier counts, as for the other side panel shortcuts. */
+export function isChangesPanelShortcut(event: Keys, letter: ShortcutLetter = DEFAULT_SHORTCUTS["changes-panel"]): boolean {
+	return matchesChord(event, letter);
 }
 
-/** Whether the app takes this key from the page, and from a terminal's program, to show or hide the Changes view. */
+/** Whether the app takes this key from the page, and from a terminal's program, to show or hide the Changes view: the key as set. */
 export function takesChangesPanelKey(event: Keys, state: AppState): boolean {
-	return isChangesPanelShortcut(event) && canToggleSidePanel(state, "changes");
+	return isChangesPanelShortcut(event, shortcutLetter(state.preferences.shortcuts, "changes-panel")) && canToggleSidePanel(state, "changes");
 }
 
 /** Alt+Up or Alt+Down alone: the step to the diff tab's previous or next file, or null for any other key. */

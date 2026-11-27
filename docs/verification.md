@@ -5805,3 +5805,31 @@ with the base, Linux x64 with Bun 1.4.5 and Git 2.56.1:
   project whose build copies 24 vendored `.woff2` fonts over themselves:
   main listed all 24 as modified, this change listed none, and with one
   font's bytes really changed it listed that one only.
+
+Run for changing the app's keyboard shortcuts in Settings (issue 258),
+Linux x64 with Bun 1.4.5:
+
+- `bun run test` on the 42 test files that cover the changed modules
+  (tests/shortcuts.test.ts, tests/shortcuts-section.test.tsx,
+  tests/preferences.test.ts, tests/palette.test.ts, tests/run-chop.test.tsx,
+  tests/run-chop-browser.test.ts, tests/settings-buttons-browser.test.ts,
+  tests/settings-nav.test.ts, tests/shell.test.ts, tests/waiting.test.tsx,
+  tests/sessions.test.tsx, tests/terminal-store.test.tsx,
+  tests/chops-panel.test.tsx, tests/chops-section.test.tsx,
+  tests/files-panel.test.tsx, tests/files-panel-browser.test.ts,
+  tests/changes-panel.test.tsx, tests/text-editor.test.tsx,
+  tests/app.test.tsx, and the others that import them): 880 passed, 0
+  failed. They cover the seven shortcuts and their defaults,
+  refusals (a terminal's copy and paste, the editor's redo, another
+  shortcut's key as set, a chop shortcut's with chops off, and Ctrl and a
+  letter alone), the main process saving them to a real settings file and
+  reading them back with a new holder as after a restart, the mock engine
+  and the store doing the same, the title bar's tooltips and the palette
+  naming the key as set, a focused terminal leaving each key as set to the
+  app and sending each default set aside to the program, the section
+  listing every shortcut and hiding the chop ones with "Use chops" off, and,
+  in headless Chrome, setting the chop search's key and the palette's by
+  pressing them, both refusals, the new keys working and the old one doing
+  nothing, and the section fitting at every width.
+- `bun run typecheck` and `bun run typecheck:desktop`: both exited 0.
+- Not run: the full suite (left to CI), the desktop app, Windows, and macOS.

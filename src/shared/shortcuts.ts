@@ -1,57 +1,77 @@
 /**
- * The shortcuts a person can change in Settings: for now the two chop
- * shortcuts, which show or hide the chops panel and search and run a chop.
- * Everything here is pure.
+ * The app's shortcuts, each of which a person can change in Settings,
+ * Shortcuts. Everything here is pure.
  *
- * A changeable shortcut is Ctrl+Shift and a letter, or Cmd+Shift and the
- * letter on macOS; either modifier counts, as for the app's fixed
- * shortcuts, so the key needs no platform test. It is read by the
- * character, and only letters are allowed: with Shift a digit arrives as
- * its symbol, and Alt chords type characters on macOS and reach terminal
- * programs as Meta keys. A terminal program sees Ctrl+Shift and a letter
- * as Ctrl and the letter, so taking it leaves the program its own key.
+ * A shortcut is Ctrl+Shift and a letter, or Cmd+Shift and the letter on
+ * macOS; either modifier counts, so the key needs no platform test (the
+ * session chips' key keeps to the platform's own modifier, as the other
+ * keys a terminal leaves to the app do). It is read by the character, and
+ * only letters are allowed: with Shift a digit arrives as its symbol, and
+ * Alt chords type characters on macOS and reach terminal programs as Meta
+ * keys. A terminal program sees Ctrl+Shift and a letter as Ctrl and the
+ * letter, so taking it leaves the program its own key.
  *
  * They are saved under `shortcuts` in the preferences, by id, only where
- * they differ from the default, so a later list of every app shortcut can
- * keep the same values.
+ * they differ from the default. The app's other keys (zoom, moving between
+ * sessions, copy and paste, the text editor's, a focused row's) follow
+ * the browser's and the terminal's ways and stay as they are.
  */
 
-/** The shortcuts Settings can change, by id. */
-export const SHORTCUT_IDS = ["chops-panel", "run-chop"] as const;
+/** The shortcuts, by id, in the order Settings lists them. */
+export const SHORTCUT_IDS = ["palette", "next-waiting", "session-chips", "files-panel", "changes-panel", "chops-panel", "run-chop"] as const;
 export type ShortcutId = typeof SHORTCUT_IDS[number];
+
+/** The shortcuts that are gone with "Use chops" off: Settings does not list them, and they take no key. */
+export const CHOP_SHORTCUT_IDS: readonly ShortcutId[] = ["chops-panel", "run-chop"];
 
 /** The keys set in Settings, by id, as a chord such as "Ctrl+Shift+K". Only the ones that differ from the default. */
 export type ShortcutSettings = Partial<Record<ShortcutId, string>>;
 
-/** A changeable shortcut's letter, upper case, such as "K" for Ctrl+Shift+K. */
+/** A shortcut's letter, upper case, such as "K" for Ctrl+Shift+K. */
 export type ShortcutLetter = string;
 
 /** The letter each shortcut has until another is set. */
 export const DEFAULT_SHORTCUTS: Readonly<Record<ShortcutId, ShortcutLetter>> = {
+	palette: "P",
+	"next-waiting": "J",
+	"session-chips": "S",
+	"files-panel": "E",
+	"changes-panel": "G",
 	"chops-panel": "K",
 	"run-chop": "T",
 };
 
-/** What each shortcut does, as Settings and a clash name it. */
+/** Each shortcut's field label in Settings, Shortcuts. */
+export const SHORTCUT_LABELS: Readonly<Record<ShortcutId, string>> = {
+	palette: "Open the command palette",
+	"next-waiting": "Show the next session that needs you",
+	"session-chips": "Go to the session chips from a terminal",
+	"files-panel": "Show or hide the files",
+	"changes-panel": "Show or hide the changes",
+	"chops-panel": "Show or hide the chops panel",
+	"run-chop": "Search and run a chop",
+};
+
+/** What each shortcut does, as a clash names it. */
 export const SHORTCUT_WORDS: Readonly<Record<ShortcutId, string>> = {
+	palette: "opens the command palette",
+	"next-waiting": "shows the next session that needs you or is done",
+	"session-chips": "goes to the session chips",
+	"files-panel": "shows or hides the files",
+	"changes-panel": "shows or hides the changes",
 	"chops-panel": "shows or hides the chops panel",
 	"run-chop": "searches and runs a chop",
 };
 
 /**
- * The Ctrl+Shift letters the app or its text editor keep, with what they
- * do. A changeable shortcut never takes one: the window hears keys before
- * the editor and a terminal, so it would take it from them.
+ * The Ctrl+Shift letters that terminals and the text editor keep, with
+ * what they do. No shortcut takes one: the window hears keys before the
+ * editor and a terminal, so it would take it from them.
  */
 export const RESERVED_SHORTCUTS: Readonly<Record<ShortcutLetter, string>> = {
-	P: "opens the command palette",
-	J: "shows the next session that needs you",
-	S: "goes to the session chips",
-	E: "shows or hides the files",
-	C: "copies in a terminal",
-	V: "pastes in a terminal",
+	C: "copies in a terminal on Linux and Windows",
+	V: "pastes in a terminal on Linux and Windows",
 	Z: "redoes in the text editor",
-	G: "shows or hides the changes",
 	U: "redoes a selection in the text editor on macOS",
 };
 
@@ -90,17 +110,55 @@ export function shortcutLetter(settings: ShortcutSettings, id: ShortcutId): Shor
 	return readChord(settings[id]) ?? DEFAULT_SHORTCUTS[id];
 }
 
+/** How a refusal names things: Cmd on macOS, and whether the chop shortcuts are in use and so listed in Settings. */
+export interface ShortcutContext {
+	mac?: boolean;
+	/** False while "Use chops" is off, so a clash with a chop shortcut says how to reach it. True when left out. */
+	useChops?: boolean;
+}
+
 /**
- * Why a shortcut cannot take this letter, or null when it can: the app or
- * its editor keeps it, or the other changeable shortcut has it now.
+ * Why a shortcut cannot take this letter, or null when it can: a terminal
+ * or the text editor keeps it, or another shortcut has it now. A chop
+ * shortcut keeps its key with chops off, so turning them on never leaves
+ * two shortcuts on one key.
  */
-export function shortcutProblem(id: ShortcutId, letter: ShortcutLetter, settings: ShortcutSettings): string | null {
-	const chord = chordText(letter);
+export function shortcutProblem(id: ShortcutId, letter: ShortcutLetter, settings: ShortcutSettings, context: ShortcutContext = {}): string | null {
+	const chord = describeChord(letter, context.mac ?? false);
 	const kept = Object.hasOwn(RESERVED_SHORTCUTS, letter) ? RESERVED_SHORTCUTS[letter] : undefined;
 	if (kept !== undefined) return `${chord} ${kept}, so it cannot be the key that ${SHORTCUT_WORDS[id]}.`;
 	const other = SHORTCUT_IDS.find(candidate => candidate !== id && shortcutLetter(settings, candidate) === letter);
-	if (other !== undefined) return `${chord} already ${SHORTCUT_WORDS[other]}. Change that one first.`;
-	return null;
+	if (other === undefined) return null;
+	if (context.useChops === false && CHOP_SHORTCUT_IDS.includes(other)) {
+		return `${chord} ${SHORTCUT_WORDS[other]} while Use chops is on. To use it here, turn on Use chops in Settings, Chops, and change that one first.`;
+	}
+	return `${chord} already ${SHORTCUT_WORDS[other]}. Change that one first.`;
+}
+
+/**
+ * What a pressed key that cannot be a shortcut says, so the person knows
+ * what to press: Ctrl and a letter belongs to the program in a terminal,
+ * such as Ctrl+C, which stops it. Null for a key that is a shortcut's
+ * chord, which `shortcutProblem` then checks.
+ */
+export function pressedKeyProblem(event: Keys, mac: boolean): string | null {
+	if (chordLetterOf(event) !== null) return null;
+	const modifier = mac ? "Cmd" : "Ctrl";
+	const example = describeChord("T", mac);
+	const plain = event.type === "keydown" && !event.altKey && !event.shiftKey && (mac ? event.metaKey : event.ctrlKey) && /^[a-z]$/i.test(event.key);
+	if (plain && !mac) return `Ctrl+${event.key.toUpperCase()} belongs to the program in a terminal, as Ctrl+C stops it, so a shortcut is Ctrl+Shift and a letter, such as ${example}.`;
+	if (plain) return `Cmd+${event.key.toUpperCase()} is kept for the system and the text editor, so a shortcut is Cmd+Shift and a letter, such as ${example}.`;
+	return `Press ${modifier}+Shift and a letter, such as ${example}.`;
+}
+
+/** A shortcut's key as set, as this platform names it, such as "Ctrl+Shift+P". */
+export function shortcutKeys(settings: ShortcutSettings, id: ShortcutId, mac: boolean): string {
+	return describeChord(shortcutLetter(settings, id), mac);
+}
+
+/** Whether a key press is a shortcut's chord as set. */
+export function isShortcut(event: Keys, settings: ShortcutSettings, id: ShortcutId): boolean {
+	return matchesChord(event, shortcutLetter(settings, id));
 }
 
 /** The settings with one shortcut set to a letter; its default is saved as nothing. */
@@ -122,7 +180,7 @@ function usable(settings: ShortcutSettings): boolean {
 
 /**
  * The shortcuts from outside, such as a save from Settings, or undefined
- * when one cannot be read, takes a kept letter, or has the other's. Ids the
+ * when one cannot be read, takes a kept letter, or has another's. Ids the
  * app does not know are left out; a default is kept as nothing.
  */
 export function readShortcuts(value: unknown): ShortcutSettings | undefined {

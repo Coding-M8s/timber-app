@@ -6,6 +6,7 @@ import { AboutSection } from "./settings/AboutSection";
 import { AgentsSection } from "./settings/AgentsSection";
 import { ChopsSection } from "./settings/ChopsSection";
 import { EditorSection } from "./settings/EditorSection";
+import { ShortcutsSection } from "./settings/ShortcutsSection";
 import { FetchSection } from "./settings/FetchSection";
 import { PullSection } from "./settings/PullSection";
 import { NotificationsSection } from "./settings/NotificationsSection";
@@ -33,6 +34,7 @@ const SECTION_VIEWS: Record<SettingsSection, ComponentType> = {
 	editor: EditorSection,
 	agents: AgentsSection,
 	chops: ChopsSection,
+	shortcuts: ShortcutsSection,
 	notifications: NotificationsSection,
 	fetch: FetchSection,
 	pull: PullSection,
