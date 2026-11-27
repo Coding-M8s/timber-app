@@ -365,10 +365,13 @@ change them here first when they change.
   is a name and one of the theme's five tag colors. Work, in the first tag
   color, is the default: a worktree with no other tag, such as one made with
   `timber new` in a terminal or by a bot, is Work. Review is in the second.
-  More are made in Settings, Tags. A tagged row is washed in its tag's color
-  (see Look); the tag's name is in the row's tooltip ("Tag: Review") and at
-  the end of its description, so it is never told by color alone, and the
-  wash has no shape or word of its own, so it never reads as a status.
+  More are made in Settings, Tags. Each row has a stripe in its tag's color
+  down its left edge, and the worktree on screen trades it for a border all
+  around in that color (see Look). The tag's name is in the row's tooltip
+  ("Tag: Review") and at the end of its description, so it is never told by
+  color alone, and the stripe has no shape or word of its own, so it never
+  reads as a status: flags, counts, and pull request marks are words,
+  letters, and shapes.
 - The row's menu (a right-click, Shift+F10, or the context menu key) has
   "Tag" before Done. It opens the tags beside the menu, each with its color
   and the current one checked, by a click, Enter, Space, Right, or the
@@ -1684,16 +1687,20 @@ gradient of Gemini's spark.
 
 Tag colors are the one exception to color as meaning: they tell kinds of
 worktrees apart and carry no status. Each theme has five, `--tag-1` to
-`--tag-5`, none of them one of its status colors. A worktree's row is
-washed in its tag's color at 7% opacity, drawn between the row's own fill
-and its words, so the hover and selected tints still deepen it and the focus
-ring goes around it as before; a colored repository or group header takes
-the same wash in place of its quiet surface. The contrast check checks
-every text and meaning color over each tag color's wash on the sidebar, so
-the wash is as strong as it can be while faint text keeps 4.5:1 in every
-built-in theme. A theme file saved before tag colors takes the built-in
-theme's of its appearance. The wash was picked over a stripe down the
-row's edge in an A/B test of real builds (issue 409).
+`--tag-5`, none of them one of its status colors, and like them each
+passes 3:1 on every surface. In Timber Dark and Timber Light they are
+blue, pink, orange, green, and deep purple, mostly after the Okabe-Ito
+palette, so they stay apart for color blind people too. A worktree's row
+has a solid 3px stripe in its tag's color inside its left padding, apart
+from the hover tint and the focus ring. The worktree on screen has no
+stripe: a 2px border all around in its tag color, over the selected tint,
+marks it, and the focus ring stays outside it. A colored repository or
+group header has the same stripe on its quiet surface. A theme file saved
+before tag colors takes the built-in theme's of its appearance. An A/B
+test of real builds (issue 409) first picked a light wash of the color
+over the row, but even at the strongest wash that kept faint text at
+4.5:1 the rows were hard to tell apart and muddy on a dark ground, so the
+stripe replaced it.
 
 Every color is a theme's. Timber Dark is the look above and the default;
 Timber Light and a few well known palettes come with the app. A theme keeps

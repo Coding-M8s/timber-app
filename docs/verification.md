@@ -5757,10 +5757,11 @@ Run for worktree tags and header colors (issue 409), Linux x64 with Bun
   takes a new id; before that fix it took the removed tag's and kept its
   worktrees.
 - `bun test tests/worktree-tags-browser.test.ts` in headless Chrome: 9
-  passed. The wash isolates each row, so a menu drawn inside a row or a
+  passed, with the wash. The wash isolated each row, so a menu drawn inside a row or a
   colored group's header was under the rows after it: with the first row's
   menu open, the test found entries of it under the rows below, until the
-  row with an open menu was lifted over its neighbours. In both themes each tag's wash is under the row's words, hover and
+  row with an open menu was lifted over its neighbours. The stripe that
+  replaced the wash isolates nothing. In both themes each tag's wash is under the row's words, hover and
   selection still change a tagged row, the focus ring goes around it, and a
   colored header takes the wash. By keyboard, Shift+F10, Up, Up reaches
   Tag, Right opens the tags on the current one, Left goes back, and Enter on
@@ -5770,3 +5771,21 @@ Run for worktree tags and header colors (issue 409), Linux x64 with Bun
 - `bun run typecheck` and `bun run typecheck:desktop`: both exited 0.
 - Not run: the desktop app and its WebKit and WebView2 views, where the wash
   has not been seen; Windows; and macOS.
+- After testing the tint by hand, the maintainer found the rows too alike
+  and muddy, and asked for a stripe, a border all around the worktree on
+  screen in place of its stripe, and colors further apart. Those were
+  checked by eye in `bun run dev:web` by the maintainer, with no tests run
+  meanwhile, then: the wash's contrast check was taken out (no row is
+  tinted), and `bun test tests/theme.test.ts tests/theme-files.test.ts
+  tests/theme-maker.test.tsx tests/worktree-tags.test.ts
+  tests/worktree-tags-ui.test.tsx tests/worktree-tags-browser.test.ts
+  tests/sidebar-look.test.ts tests/worktree-row.test.tsx
+  tests/sidebar-tags.test.ts tests/repository-groups-browser.test.ts
+  tests/repository-header-look-browser.test.ts`: 156 passed. The new
+  colors pass 3:1 on every surface and are none of the status colors; the
+  browser test checks the 3px stripe, the border and missing stripe of the
+  row on screen, hover and focus on a tagged row, and the stripe on a
+  colored header in both themes.
+- `bun run test` after the stripe: 5,038 passed, 19 skipped, 0 failed, in
+  299 files. `bun run typecheck` and `bun run typecheck:desktop`: both
+  exited 0.

@@ -131,7 +131,8 @@ export const DEFAULT_DARK_THEME: Theme = theme("timber-dark", "Timber Dark", "da
 	error: "#f08b80",
 	errorHover: "#f6a399",
 	merged: "#c79bf2",
-	tags: ["#4fc4b8", "#f08fc0", "#8f9cf7", "#b5d86a", "#f0a46a"],
+	// Blue, pink, orange, green, and a deep purple, mostly after the Okabe-Ito palette, which is made to be told apart, color blindness included.
+	tags: ["#56b4e9", "#e07ab8", "#e69f00", "#3cc35a", "#8b5cf6"],
 	ansi: [
 		"#1f1f23", "#f08b80", "#73c991", "#e2c08d", "#6ea8fe", "#c79bf2", "#6ccfd8", "#a1a1aa",
 		"#8a8a94", "#ffa79d", "#93deac", "#f0d4a6", "#94c0ff", "#dab8f7", "#93e2e9", "#ececef",
@@ -156,7 +157,8 @@ export const DEFAULT_LIGHT_THEME: Theme = theme("timber-light", "Timber Light", 
 	error: "#c62828",
 	errorHover: "#a51f1f",
 	merged: "#9333ea",
-	tags: ["#0f8077", "#c0357c", "#4b56cf", "#557d10", "#b8561a"],
+	// The same five, darker for a light ground.
+	tags: ["#0072b2", "#b8327f", "#b35c00", "#2f7a0a", "#5b21b6"],
 	ansi: [
 		"#18181b", "#c62828", "#15803d", "#8a6100", "#1d4ed8", "#9333ea", "#0e7490", "#71717a",
 		"#52525b", "#dc2626", "#16a34a", "#a16207", "#2563eb", "#a855f7", "#0891b2", "#3f3f46",

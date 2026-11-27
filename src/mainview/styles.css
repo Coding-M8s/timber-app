@@ -8526,56 +8526,61 @@ pre:focus-visible {
 }
 
 /*
- * Worktree tags (issue 409): a light wash of the worktree's tag color over
- * its row, drawn between the row's own fill and its words, so hover and
- * selection still deepen the row beneath it and the words keep their colors.
- * The focus ring is outside the row and stays as it is. The wash is the tag
- * color at TAG_WASH_OPACITY (src/shared/theme.ts), which the contrast check
- * checks every word over. It carries no status: it has no shape or word of
- * its own, and the tag's name is in the row's tooltip and description.
+ * Worktree tags (issue 409): a stripe, a narrow solid bar in the worktree's
+ * tag color down the row's left edge, inside its padding, so it never
+ * touches the hover tint or the focus ring. It is a plain bar with no shape
+ * or word of its own, so it never reads as a status: the row's flags, change
+ * counts, and pull request marks are words, letters, and shapes. The tag's
+ * name is in the row's tooltip and description.
  */
-.row-item[data-tag],
-.group-head.colored,
-.repository-group-head.colored {
-	position: relative;
-	isolation: isolate;
-}
-
-.row-item[data-tag]::before,
-.group-head.colored::before,
-.repository-group-head.colored::before {
+.row-item[data-tag]::before {
 	content: "";
 	position: absolute;
-	inset: 0;
-	z-index: -1;
-	border-radius: inherit;
+	top: 8px;
+	bottom: 8px;
+	left: 8px;
+	width: 3px;
+	border-radius: 2px;
 	background: var(--tag);
-	opacity: 0.07;
 	pointer-events: none;
 }
 
 /*
- * The isolation above keeps a menu drawn inside the row or header within
- * it, so while one is open the row or header goes over its neighbours, and
- * the menu over the rows below it.
+ * The worktree on screen trades its stripe for a border all around in its
+ * tag color, over the selected tint, so it stands out from the rows around
+ * it. The focus ring is outside the row, so the two never cover each other.
  */
-.row-item[data-tag]:has(.worktree-menu),
-.group-head.colored:has(.worktree-menu),
-.repository-group-head.colored:has(.worktree-menu) {
-	z-index: 30;
+.row-item.selected[data-tag] {
+	box-shadow: inset 0 0 0 2px var(--tag);
 }
 
-/*
- * A colored header takes the wash in place of its quiet surface: over that
- * surface, the faint words would fall under the contrast check's minimum. It
- * colors only the header; each worktree keeps its own tag.
- */
-.group-head.colored {
-	background: transparent;
+.row-item.selected[data-tag]::before {
+	display: none;
 }
 
+/* A colored header gets the same bar in its color. Its own quiet surface stays. */
+.group-head.colored,
 .repository-group-head.colored {
-	border-radius: 6px;
+	position: relative;
+}
+
+.group-head.colored::before,
+.repository-group-head.colored::before {
+	content: "";
+	position: absolute;
+	top: 6px;
+	bottom: 6px;
+	left: 0;
+	width: 3px;
+	border-radius: 2px;
+	background: var(--tag);
+	pointer-events: none;
+}
+
+/* The header's chevron moves over so the bar has room. */
+.group-head.colored .group-header,
+.repository-group-head.colored .repository-group-header {
+	padding-left: 10px;
 }
 
 /* A tag color as a small mark beside the words that name it. */

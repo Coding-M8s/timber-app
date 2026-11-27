@@ -117,12 +117,13 @@ describe("a worktree's tag and a header's color", () => {
 	});
 });
 
-describe("the wash in the stylesheet", () => {
-	test("is drawn at the opacity the contrast check checks the words over", async () => {
-		const { TAG_WASH_OPACITY } = await import("../src/shared/theme");
+describe("the stripe in the stylesheet", () => {
+	test("is a solid bar in the tag color, and the worktree on screen trades it for a border all around", async () => {
 		const css = await Bun.file(new URL("../src/mainview/styles.css", import.meta.url)).text();
-		const rule = /\.row-item\[data-tag\]::before,[^{]*\{([^}]*)\}/.exec(css)?.[1] ?? "";
-		expect(rule).toContain(`opacity: ${TAG_WASH_OPACITY};`);
-		expect(rule).toContain("background: var(--tag);");
+		const rule = (selector: string) => new RegExp(`${selector.replace(/[.[\]:]/g, "\\$&")} \\{([^}]*)\\}`).exec(css)?.[1] ?? "";
+		expect(rule(".row-item[data-tag]::before")).toContain("background: var(--tag);");
+		expect(rule(".row-item[data-tag]::before")).not.toContain("opacity");
+		expect(rule(".row-item.selected[data-tag]")).toContain("box-shadow: inset 0 0 0 2px var(--tag);");
+		expect(rule(".row-item.selected[data-tag]::before")).toContain("display: none;");
 	});
 });
