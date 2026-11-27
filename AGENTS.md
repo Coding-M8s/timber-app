@@ -15,6 +15,7 @@ This is the desktop app for Timber: TypeScript on Bun, an Electrobun shell, and 
 - No platform is verified yet. Claim support for an operating system only after actual testing on it.
 - Work in independent ticket branches and PRs with one implementer and one reviewer.
 - Record exact verification commands and observed results. Do not claim a passing desktop build before it has been run.
+- Verify a change with the test files that cover it (`bun run test <files>`) plus `bun run typecheck`, not the full suite. CI runs every test; fix what it finds on the PR.
 
 ## Commit hygiene
 
