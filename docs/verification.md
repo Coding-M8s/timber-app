@@ -5879,3 +5879,72 @@ with Bun 1.4.2, Git, Timber at `~/.local/bin/timber`, and Google Chrome:
   view's notes, and four others); each passed when its file was run alone.
 - `bun run typecheck` and `bun run typecheck:desktop`: both exited 0.
 - Not run: the desktop app, Windows, and macOS.
+
+Run for opening terminals, agents, and the editor without waiting for a full
+`timber ls` (issue 396), on 2026-11-27, Windows 11 x64 (10.0.26200) with Bun
+1.4.5 and Git for Windows, and Linux x64 under WSL2 (kernel
+6.6.87.2-microsoft-standard-WSL2, Ubuntu) with Bun 1.4.2 and Git 2.43.0:
+
+- `bun scripts/fetch-timber.ts`: Timber 0.2.0, the pinned one, for
+  windows-x64 and, in WSL, for linux-x64.
+- The measured repository: a `git clone` of timber-app with two more worktrees
+  from `git worktree add`, 3 worktrees in all, as in the issue. On Windows it
+  was in the user's temporary folder; in WSL it was in the Linux home folder,
+  not under `/mnt/c`.
+- `bun scripts/measure-launch.ts <that clone> --runs 4`, which times
+  `TerminalSessions.open` from the request to the session being created, with
+  the person's own shell in a real pseudo terminal in the primary checkout,
+  after one sidebar read, the watcher running. "before" asks only
+  `RepositoryList.find`, as the app did; "after" is the app as now.
+  - Windows: before 1601, 1032, 1228, 1291 ms (1032 to 1601), 4 runs of
+    `timber ls`; after 31, 46, 52, 33 ms (31 to 52), none. The issue's before,
+    measured on 2026-11-24 on Windows 11 x64 with Timber 0.2.0, was 1742 to
+    1788 ms for the read alone.
+  - Linux (WSL2): before 222, 264, 254, 195 ms (195 to 264), 4 runs of
+    `timber ls`; after 2, 1, 1, 1 ms, none. Not measured on Linux outside WSL.
+- `bun run test tests/launch-listing.test.ts` on Windows: 6 passed. Through
+  the main process's chain (a reader that counts reloads, the kept listings,
+  the repository list on a real settings file, the terminals and editor, a
+  stand-in pseudo terminal, real worktree folders): a terminal, an agent from
+  Settings, a workflow's agent, an arena attempt, a terminal editor, and the
+  external editor run no reload after the sidebar's read, a minute later; a
+  worktree Timber no longer lists, once the change was heard, is refused with
+  the same "Timber lists no worktree" message and one read each; a worktree
+  made after the listing opens after one read; with no listing, after a
+  change, and past 10 minutes each launch reads once; Setup and `find` read
+  every time and `findRecent` keeps its 10 seconds; the repository's files and
+  refs are unchanged. With the kept-listing branch of `findListedWorktree`
+  taken out, the first test failed; with the check for a heard change taken
+  out of `known`, the removed-worktree test and the no-listing test failed,
+  and two of `tests/recent-listings.test.ts`.
+- `bun run test tests/recent-listings.test.ts tests/repository-watcher.test.ts`
+  on Windows: 30 passed. `known` answers for up to 10 minutes and `recent`
+  still for 10 seconds; it has nothing and reads nothing with no listing,
+  after a change, past the guard, for a listing Timber could not make, with
+  no watch, for a listing read while unwatched, or after the watch started
+  again; it joins a running read. `watching` is null before a sync, for a
+  repository not watched or whose Git directory or refs cannot be watched,
+  after a watch broke, and after `stop`, and a new number after a watch broke
+  or the repository was added again.
+- `bun run test tests/repository-list.test.ts` on Windows with the pinned
+  Timber 0.2.0 first on PATH (with only Timber 0.1.3 on PATH these tests
+  skipped): 58 passed, 1 skipped, on real temporary
+  repositories, with the two new `findKnown` tests: the reader's kept listing,
+  nothing read, only for a repository in the list, and nothing under
+  `TIMBER_APP_REPOS`.
+- `bun run test tests/terminals.test.ts tests/terminals-windows.test.ts
+  tests/editor-launch.test.ts tests/editor.test.ts tests/editor-session.test.ts
+  tests/workflow-agent-session.test.ts tests/launch-listing.test.ts
+  tests/recent-listings.test.ts tests/repository-watcher.test.ts
+  tests/repository-list.test.ts` on Windows, Timber 0.2.0 on PATH: 134
+  passed, 155 skipped (the POSIX ones), 2 failed: two ConPTY tests of
+  `tests/terminals-windows.test.ts` that each ran out at about 8.7 seconds.
+  That file never passes `findKnownRepository`, so its launches read as
+  before, and run alone it passed, 13 of 13.
+- The same files without `tests/terminals-windows.test.ts` in WSL, Timber
+  0.2.0 on PATH: 268 passed, 0 skipped, 0 failed.
+- `bun run typecheck` and `bun run typecheck:desktop`: both exited 0.
+  `scripts/measure-launch.ts` is in neither; `tsc --noEmit` with a config
+  that extends `tsconfig.desktop.json` and includes only it reported no
+  errors.
+- Not run: the desktop app, by hand, on any system; macOS.

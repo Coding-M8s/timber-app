@@ -36,9 +36,10 @@ export interface RepositoryListOptions {
 	pickFolder: () => Promise<string | null>;
 	/**
 	 * Reads a repository and its worktrees. With `recent`, `findRecent` may
-	 * answer with a listing that was just read (see ./recent-listings.ts).
+	 * answer with a listing that was just read, and with `known`, `findKnown`
+	 * with the last one read (see ./recent-listings.ts).
 	 */
-	reader: RepositoryReader & { recent?(path: string): Promise<Repository | null> };
+	reader: RepositoryReader & { recent?(path: string): Promise<Repository | null>; known?(path: string): Promise<Repository | null> | null };
 	environment?: Record<string, string | undefined>;
 	warn?: (message: string) => void;
 }
@@ -82,6 +83,14 @@ export interface RepositoryList {
 	 * change nothing, such as the Changes view and chops.
 	 */
 	findRecent(path: string): Promise<Repository | null>;
+	/**
+	 * The last listing of the repository in the list whose primary checkout is
+	 * `path`, when no change of it was heard since and its watch is working
+	 * (see `RecentListings.known`). Null when there is none, or no such
+	 * repository: nothing is read, and the caller asks `find`. Only for
+	 * opening a session or the external editor (see `findListedWorktree`).
+	 */
+	findKnown(path: string): Promise<Repository | null>;
 	/**
 	 * The repositories to watch for changes: the primary checkout of each, with
 	 * its common Git directory. From the saved list without asking Timber, or,
@@ -298,6 +307,16 @@ export function createRepositoryList(options: RepositoryListOptions): Repository
 			const { repositories } = await settings();
 			if (!repositories.some(entry => entry.path === path)) return null;
 			return inSavedOrder(await (reader.recent ?? reader.reload)(path) ?? unavailable(path), (await settings()).repositories);
+		},
+
+		async findKnown(path) {
+			// The override's repositories are read on every ask, as `find` reads them.
+			if (overrideRepositoryPaths(environment)) return null;
+			const { repositories } = await settings();
+			if (!repositories.some(entry => entry.path === path)) return null;
+			const kept = reader.known?.(path) ?? null;
+			const repository = kept === null ? null : await kept;
+			return repository === null ? null : inSavedOrder(repository, (await settings()).repositories);
 		},
 
 		async watchTargets() {

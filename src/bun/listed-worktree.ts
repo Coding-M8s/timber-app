@@ -4,11 +4,22 @@ import type { Repository, Worktree } from "../shared/model";
 import { messageOf } from "../shared/error-message";
 
 /**
- * The repository in the app's list whose primary checkout is `path`, read
- * again, so that its worktrees are the ones Timber lists right now. Null when
- * the list has no such repository (see `RepositoryList.find`).
+ * The repository in the app's list whose primary checkout is `path`. Null when
+ * the list has no such repository. `RepositoryList.find` reads it again, so its
+ * worktrees are the ones Timber lists right now; `RepositoryList.findKnown` may
+ * answer with the last listing.
  */
 export type FindRepository = (path: string) => Promise<Repository | null>;
+
+/**
+ * How a launch finds the repository: `known` answers with the last listing,
+ * or null for none, reading nothing (see `RepositoryList.findKnown`), and
+ * `fresh` reads it again.
+ */
+export interface LaunchFinders {
+	known: FindRepository;
+	fresh: FindRepository;
+}
 
 function isFolder(path: string): boolean {
 	try {
@@ -26,9 +37,16 @@ function isFolder(path: string): boolean {
  *
  * With `listedOnly`, the path is only looked for in Timber's list, as Done
  * needs: Timber also removes a worktree whose folder is gone.
+ *
+ * With `LaunchFinders`, the last listing is enough when it lists the worktree.
+ * Anything else, such as a worktree made in the app a moment ago and not heard
+ * yet, is decided by reading the repository again, so a refusal is the same as
+ * with `fresh` alone, and so is every message. A worktree removed since the
+ * listing is refused all the same: the watcher's report of its removal forgets
+ * that listing, and until it comes, its folder is missing.
  */
 export async function findListedWorktree(
-	findRepository: FindRepository,
+	findRepository: FindRepository | LaunchFinders,
 	repositoryPath: string,
 	worktreePath: string,
 	consequence: string,
@@ -36,9 +54,17 @@ export async function findListedWorktree(
 ): Promise<{ ok: true; worktree: Worktree } | { ok: false; message: string }> {
 	const refuse = (message: string) => ({ ok: false as const, message });
 	if (!listedOnly && !isAbsolute(worktreePath)) return refuse(`${worktreePath} is not a full path, so it cannot be a worktree Timber lists. ${consequence}`);
+	let fresh: FindRepository;
+	if (typeof findRepository === "function") fresh = findRepository;
+	else {
+		fresh = findRepository.fresh;
+		const known = await findRepository.known(repositoryPath).catch(() => null);
+		const worktree = known?.available && known.failure === null ? known.worktrees.find(candidate => candidate.path === worktreePath) : undefined;
+		if (worktree && (listedOnly || isFolder(worktreePath))) return { ok: true, worktree };
+	}
 	let repository: Repository | null;
 	try {
-		repository = await findRepository(repositoryPath);
+		repository = await fresh(repositoryPath);
 	} catch (error) {
 		return refuse(`Could not read the repository at ${repositoryPath}: ${messageOf(error)}. ${consequence}`);
 	}

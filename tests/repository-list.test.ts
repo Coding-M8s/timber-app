@@ -416,6 +416,39 @@ describe.skipIf(realTimber === null)("finding for a read-only view", () => {
 	});
 });
 
+describe.skipIf(realTimber === null)("finding for a launch", () => {
+	test("answers with the reader's known listing, reading nothing, and only for a repository in the list", async () => {
+		await listOn().addFolder(linked);
+		const asked: string[] = [];
+		let reloads = 0;
+		let known: Promise<{ path: string; name: string; available: boolean; failure: null; setup: "unknown"; fallbackBase: null; worktrees: [] }> | null = null;
+		const knownReader = {
+			...reader,
+			reload: async (path: string) => {
+				reloads += 1;
+				return reader.reload(path);
+			},
+			known: (path: string) => {
+				asked.push(path);
+				return known;
+			},
+		};
+		const list = listOn({ reader: knownReader });
+		// None kept: null, and the launch asks `find`.
+		expect(await list.findKnown(primary)).toBeNull();
+		known = Promise.resolve({ path: primary, name: "known", available: true, failure: null, setup: "unknown", fallbackBase: null, worktrees: [] });
+		expect((await list.findKnown(primary))?.name).toBe("known");
+		expect(await list.findKnown(plain)).toBeNull();
+		expect(asked).toEqual([primary, primary]);
+		expect(reloads).toBe(0);
+	});
+
+	test("has nothing under the override, whose repositories are read on every ask", async () => {
+		const list = listOn({ reader: { ...reader, known: () => { throw new Error("not asked"); } }, environment: { TIMBER_APP_REPOS: primary } });
+		expect(await list.findKnown(primary)).toBeNull();
+	});
+});
+
 describe.skipIf(realTimber === null)("the repositories to watch", () => {
 	test("are the saved ones, each with its common Git directory, without asking Timber", async () => {
 		const list = listOn();
