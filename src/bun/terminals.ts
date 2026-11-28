@@ -62,8 +62,15 @@ const CHOP_WAIT_MILLISECONDS = 5000;
 const CHOP_QUIET_MILLISECONDS = 300;
 
 export interface TerminalDependencies {
-	/** The repository in the app's list, read again (see ./listed-worktree.ts). */
+	/** The repository in the app's list, read again (see ./listed-worktree.ts). Asked when the kept listing is not enough. */
 	findRepository: FindRepository;
+	/**
+	 * The repository in the app's list, perhaps from its last listing (see
+	 * `RepositoryList.findKnown`). Opening a session asks this first, except
+	 * for a Timber command such as Setup, which reads again. Left out, every
+	 * session reads again.
+	 */
+	findKnownRepository?: FindRepository;
 	/**
 	 * The agents as saved in Settings. An agent's command comes only from
 	 * here, never from the interface. None when left out.
@@ -599,7 +606,7 @@ export function sessionEnvironment(environment: Record<string, string | undefine
  */
 export function createTerminalSessions(dependencies: TerminalDependencies): TerminalSessions {
 	const {
-		findRepository, onOutput, onChange, agents = async () => [], sessionNaming = async (): Promise<SessionNaming> => "plain", timber = async (): Promise<TimberStatus> => ({ state: "not-found", source: "path", path: null }), environment = process.env, handoffFolder = async () => null, statusFolder = async () => null, platform = process.platform,
+		findRepository, findKnownRepository, onOutput, onChange, agents = async () => [], sessionNaming = async (): Promise<SessionNaming> => "plain", timber = async (): Promise<TimberStatus> => ({ state: "not-found", source: "path", path: null }), environment = process.env, handoffFolder = async () => null, statusFolder = async () => null, platform = process.platform,
 		arenaLaunch = async () => ({ outcome: "failed", message: "Arena attempts cannot start here. Nothing was started." }),
 		workflows = async (): Promise<WorkflowList> => ({ ok: false, message: "Workflows cannot be read here." }),
 		startTerminal = startPseudoTerminal(platform),
@@ -1126,7 +1133,9 @@ export function createTerminalSessions(dependencies: TerminalDependencies): Term
 			: workflowAgent !== undefined ? `The agent of the ${workflowAgent.workflow} workflow was not started.`
 			: editor ? "The editor was not started."
 			: run ? `${run.what} was not started.` : chop?.kind === "command" ? `${chop.name} was not started.` : "No terminal was started.";
-		const listed = await findListedWorktree(findRepository, request.repository, request.worktree, consequence);
+		// Only a session that runs a Timber command, which may change the repository, waits for Timber to list it again.
+		const finders = run === null && findKnownRepository !== undefined ? { known: findKnownRepository, fresh: findRepository } : findRepository;
+		const listed = await findListedWorktree(finders, request.repository, request.worktree, consequence);
 		if (!listed.ok) return { outcome: "not-listed", message: listed.message };
 		// From here to the new session being kept nothing waits, so two sessions that start at once get different names.
 		let launch = attempt.launch ?? workflowLaunch ?? editor ?? null;

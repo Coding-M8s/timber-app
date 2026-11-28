@@ -1019,7 +1019,7 @@ The app keeps its own list of repositories, so it is the same after a restart.
   empty one forgets it, a repository that is not listed saves nothing, and
   the override refuses. `RepositoryList` applies it with `applyOrder` to
   every read that answers the interface (`list`, `reload`, `find`,
-  `findRecent`), after the reader and its recent listings, which stay in
+  `findRecent`, `findKnown`), after the reader and its recent listings, which stay in
   Timber's order, so a save needs no invalidation. A worktree the order does
   not name follows the ones it names, so a new one is last, and a path that
   names no worktree is skipped. Removing the repository removes its order.
@@ -1294,6 +1294,28 @@ repository through the path described [above](#shared-state-and-live-updates).
   a change in that repository, and for at most 10 seconds; one that Timber
   could not list is not reused. Every command that changes a repository
   still reads it again. With `TIMBER_APP_REPOS` nothing is reused or paced.
+- **Opening a session or the editor from the kept listing
+  (`RecentListings.known`, `RepositoryList.findKnown`).** Opening a
+  terminal, an agent from Settings, a workflow's agent, an arena attempt, a
+  chop, a terminal editor, or the external editor only needs to know that Timber
+  lists the worktree, and on Windows `timber ls` takes well over a second, so
+  waiting for it made every launch slow. These launches check the last
+  listing of the repository first, when no change of it was heard since that
+  listing began, the watcher is still hearing it with the same watch it had
+  then (`RepositoryWatcher.watching`: none for a repository it could not
+  watch, a new one after a watch broke or the repository was added again),
+  and it is less than 10 minutes old. The age is only a guard for a watch
+  that stopped hearing without saying so. A listing that lists the worktree,
+  whose folder is there, is enough. Anything else reads the repository again
+  and decides from that read, as before (`findListedWorktree` with
+  `LaunchFinders`): a worktree made in the app a moment ago, before the
+  watcher heard it, opens, and every refusal is Timber's answer of now, with
+  the same message. A worktree removed outside the app is refused: the
+  watcher's report forgets the listing, and until that report comes its
+  folder is gone. Setup, which runs `timber worktree setup`, and every
+  command that changes a repository still read it first, as do the Changes
+  view and chops after their own 10 seconds. With `TIMBER_APP_REPOS` every
+  launch reads.
 - **Folders that come and go.** `worktrees` exists only while there are
   linked worktrees, and its watch stops working when it is removed. Its
   appearing or going in the common directory starts the watch again. A
@@ -3626,8 +3648,10 @@ Open always pass `--no-editor` to Timber (see
   `Engine` contract. The request names only the worktree. The command comes
   from the saved setting in the main process (`src/bun/editor.ts`), never
   from the interface. Like Done, it acts only on a repository in the app's
-  list and a full path that `timber ls --json` lists for it at that moment,
-  and only when that folder is there. These checks come first, so no answer
+  list and a full path that `timber ls --json` lists for it, from the kept
+  listing when that lists it and otherwise read again (see "Opening a session
+  or the editor from the kept listing"), and only when that folder is there.
+  These checks come first, so no answer
   ever carries a command built from a path that was not listed. The request
   may also name a `file`, relative to the worktree as Git reports it, which
   the diff tab does. The editor then gets that file's full path in place
@@ -5008,9 +5032,10 @@ that run when the app quits open again when it starts.
   there, and its sessions are not in it. A multiplexer started in a session
   sets its own.
 - **Which worktrees.** As for "Open in editor": only a repository in the
-  app's list and a full path that `timber ls --json` lists for it at that
-  moment, whose folder is there (`findListedWorktree` in
-  `src/bun/listed-worktree.ts`, shared with `src/bun/editor.ts`). Each
+  app's list and a full path that `timber ls --json` lists for it, whose
+  folder is there (`findListedWorktree` in `src/bun/listed-worktree.ts`,
+  shared with `src/bun/editor.ts`), from the kept listing when it lists it
+  (see "Opening a session or the editor from the kept listing"). Each
   `openTerminal` starts one more session beside the ones the worktree has.
 - **Kinds and names.** A session has a kind and a name. The kind is
   `terminal` for the shell, `agent` for a coding agent, from Settings or

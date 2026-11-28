@@ -20,8 +20,10 @@ const WATCH_MILLISECONDS = 500;
 export interface EditorDependencies {
 	/** The preferences as saved. The editor command comes only from here, never from the interface. */
 	preferences: () => Promise<Preferences>;
-	/** The repository in the app's list, read again (see ./listed-worktree.ts). */
+	/** The repository in the app's list, read again (see ./listed-worktree.ts). Asked when the kept listing is not enough. */
 	findRepository: FindRepository;
+	/** The repository in the app's list, perhaps from its last listing, asked first (see `RepositoryList.findKnown`). Left out, it is read again. */
+	findKnownRepository?: FindRepository;
 	/** The environment the app was started with. Its PATH is where the editor is looked for, and the editor gets all of it. */
 	environment?: Record<string, string | undefined>;
 	/** How long to watch for an editor that stops right away. Tests shorten it. */
@@ -88,14 +90,15 @@ async function earlyExit(child: Bun.Subprocess, milliseconds: number): Promise<{
  *   VS Code's `code` on Windows is such a file.
  */
 export function createEditorLauncher(dependencies: EditorDependencies): EditorLauncher {
-	const { preferences, findRepository, environment = process.env, watchMilliseconds = WATCH_MILLISECONDS, platform = process.platform, openSession } = dependencies;
+	const { preferences, findRepository, findKnownRepository, environment = process.env, watchMilliseconds = WATCH_MILLISECONDS, platform = process.platform, openSession } = dependencies;
 
 	async function open(request: OpenInEditorRequest): Promise<OpenInEditorResult> {
 		const { editor } = await preferences();
 		if (editor === null) return { outcome: "not-configured" };
 
 		// The path is checked before any command is built from it, so no answer shows a command for a path that is not listed.
-		const listed = await findListedWorktree(findRepository, request.repository, request.worktree, "No editor was started.");
+		const finders = findKnownRepository === undefined ? findRepository : { known: findKnownRepository, fresh: findRepository };
+		const listed = await findListedWorktree(finders, request.repository, request.worktree, "No editor was started.");
 		if (!listed.ok) return { outcome: "not-listed", message: listed.message };
 
 		const target = editorTarget(request.worktree, request.file);

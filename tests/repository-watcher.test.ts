@@ -219,6 +219,47 @@ describe("createRepositoryWatcher with stand-in watches", () => {
 		expect(changes).toEqual([]);
 	});
 
+	test("says which watch hears a repository, none for one it does not watch, and a new one after a watch broke", () => {
+		const { watches, watcher } = setup();
+		expect(watcher.watching(REPO.path)).toBeNull();
+		watcher.sync([REPO]);
+		const first = watcher.watching(REPO.path);
+		expect(first).not.toBeNull();
+		expect(watcher.watching(OTHER.path)).toBeNull();
+		// A sync that changes nothing keeps the same watch.
+		watcher.sync([REPO]);
+		expect(watcher.watching(REPO.path)).toBe(first);
+
+		watches.fail("/work/sample/.git/refs", new Error("watch broke"));
+		expect(watcher.watching(REPO.path)).toBeNull();
+		watcher.sync([REPO]);
+		const second = watcher.watching(REPO.path);
+		expect(second).not.toBeNull();
+		expect(second).not.toBe(first);
+
+		// Removed from the list and added again: changes in between were not heard.
+		watcher.sync([]);
+		expect(watcher.watching(REPO.path)).toBeNull();
+		watcher.sync([REPO]);
+		expect([first, second]).not.toContain(watcher.watching(REPO.path));
+	});
+
+	test("hears no repository whose Git directory cannot be watched, or after it stopped", () => {
+		const { watches, watcher } = setup();
+		watches.missing.add("/work/sample/.git");
+		watches.refused.set("/work/other/.git/refs", "ENOSPC: System limit for number of file watchers reached");
+		watcher.sync([REPO, OTHER]);
+		expect(watcher.watching(REPO.path)).toBeNull();
+		expect(watcher.watching(OTHER.path)).toBeNull();
+		watches.missing.clear();
+		watches.refused.clear();
+		watcher.sync([REPO, OTHER]);
+		expect(watcher.watching(REPO.path)).not.toBeNull();
+		expect(watcher.watching(OTHER.path)).not.toBeNull();
+		watcher.stop();
+		expect(watcher.watching(REPO.path)).toBeNull();
+	});
+
 	test("stop closes everything and reports nothing more", () => {
 		const { clock, watches, changes, watcher } = setup();
 		watcher.sync([REPO]);

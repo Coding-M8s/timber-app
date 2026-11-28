@@ -140,12 +140,16 @@ const settings = createSettingsHolder(settingsFile);
 /*
  * Every read of a repository's worktrees is paced (see ./listing-pace.ts), and the read-only views reuse the one the
  * sidebar just read (see ./recent-listings.ts), so a background change costs one `timber ls`, not one per view.
+ * Opening a session or the external editor reuses the last listing for longer, while the watcher still hears the
+ * repository as it did when that listing began.
  */
 const pace = createListingPace({
 	send: path => repositoryChanges.announce(path),
 	resend: path => refreshPolicy.changed(path),
 });
-const listings = createRecentListings(createRepositoryReader(() => timber.current()), { listing: pace.listing });
+// Made before the listings, which ask it which watch hears a repository. It hears nothing until the first sync below.
+const watcher = createRepositoryWatcher({ onChange: heard });
+const listings = createRecentListings(createRepositoryReader(() => timber.current()), { listing: pace.listing, watching: path => watcher.watching(path) });
 const repositories = createRepositoryList({ settingsFile, settings, pickFolder, reader: listings });
 const sidebarIcons = createSidebarIcons({ settings, pickFile });
 const sidebarTags = createSidebarTags(settings);
@@ -212,7 +216,6 @@ function heard(path: string): void {
 	listings.forget(path);
 	refreshPolicy.changed(path);
 }
-const watcher = createRepositoryWatcher({ onChange: heard });
 // The chops file of each main checkout, and nothing else in it (see ./chops-watcher.ts). The window lists the chops again.
 const chopsWatcher = createChopsWatcher({ onChange: repository => tell(`a change to the chops of ${repository}`, () => rpc.send.chopsChanged({ repository })) });
 
@@ -329,6 +332,7 @@ const issueLists = createIssueLister({ timber: () => timber.current(), isListed:
 const editor = createEditorLauncher({
 	preferences: () => preferences.load(),
 	findRepository: path => repositories.find(path),
+	findKnownRepository: path => repositories.findKnown(path),
 	openSession: (request, launch) => terminals.open(request, undefined, launch),
 });
 
@@ -444,6 +448,8 @@ const terminals = createTerminalSessions({
 	handoffFolder: () => handoffReady,
 	statusFolder: () => statusReady,
 	findRepository: path => repositories.find(path),
+	// Opening a session asks the last listing first; Setup and every refusal read again (see ./listed-worktree.ts).
+	findKnownRepository: path => repositories.findKnown(path),
 	// An agent's command comes from the saved preferences only (see ./terminals.ts).
 	agents: async () => (await preferences.load()).agents,
 	sessionNaming: async () => (await preferences.load()).sessionNames,

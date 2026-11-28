@@ -67,6 +67,14 @@ export interface RepositoryWatcherOptions {
 export interface RepositoryWatcher {
 	/** Watch exactly these repositories from now on. Watches that broke or could not start are tried again. */
 	sync(targets: readonly WatchTarget[]): void;
+	/**
+	 * Which watch hears the repository whose primary checkout is `path` now, or
+	 * null when none does: it is not in the last sync, its Git directory could
+	 * not be watched, or a watch of it broke and has not started again. The
+	 * number changes each time its watch starts again, so a listing read under
+	 * one number may have missed a change made before the next.
+	 */
+	watching(path: string): number | null;
 	/** Stop every watch and every pending report. */
 	stop(): void;
 }
@@ -93,6 +101,8 @@ interface Entry {
 	watches: Map<WatchedArea, DirectoryWatch>;
 	/** A watch broke or could not start for another reason than a missing folder, so the next sync tries again. */
 	broken: boolean;
+	/** Which watch this is, for `watching`. */
+	id: number;
 	warned: boolean;
 	pending: { cancelQuiet: () => void; cancelMost: () => void } | null;
 }
@@ -107,6 +117,7 @@ export function createRepositoryWatcher(options: RepositoryWatcherOptions): Repo
 		mostMilliseconds = MOST_MILLISECONDS,
 	} = options;
 	const entries = new Map<string, Entry>();
+	let lastId = 0;
 
 	function report(entry: Entry): void {
 		const pending = entry.pending;
@@ -179,7 +190,7 @@ export function createRepositoryWatcher(options: RepositoryWatcherOptions): Repo
 	}
 
 	function open(target: WatchTarget): void {
-		const entry: Entry = { target, watches: new Map(), broken: false, warned: false, pending: null };
+		const entry: Entry = { target, watches: new Map(), broken: false, id: ++lastId, warned: false, pending: null };
 		entries.set(target.path, entry);
 		for (const { area } of AREAS) arm(entry, area);
 	}
@@ -207,11 +218,16 @@ export function createRepositoryWatcher(options: RepositoryWatcherOptions): Repo
 					continue;
 				}
 				// Try again what broke or could not start, and what did not exist before but may now.
+				if (entry.broken) entry.id = ++lastId;
 				entry.broken = false;
 				for (const { area } of AREAS) {
 					if (!entry.watches.has(area)) arm(entry, area);
 				}
 			}
+		},
+		watching(path) {
+			const entry = entries.get(path);
+			return entry && !entry.broken && entry.watches.has("common") ? entry.id : null;
 		},
 		stop() {
 			for (const entry of [...entries.values()]) close(entry);
